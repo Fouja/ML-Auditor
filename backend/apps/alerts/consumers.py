@@ -41,24 +41,36 @@ class AlertsConsumer(AsyncWebsocketConsumer):
         if message_type == "subscribe":
             # Subscribe to specific alert types
             alert_type = data.get("alert_type", "all")
-            await self.send(text_data=json.dumps({
-                "type": "subscribed",
-                "alert_type": alert_type,
-            }))
+            await self.send(
+                text_data=json.dumps(
+                    {
+                        "type": "subscribed",
+                        "alert_type": alert_type,
+                    }
+                )
+            )
 
     async def alert_new(self, event):
         """Send new alert to WebSocket."""
-        await self.send(text_data=json.dumps({
-            "type": "new_alert",
-            "alert": event["alert"],
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "new_alert",
+                    "alert": event["alert"],
+                }
+            )
+        )
 
     async def alert_update(self, event):
         """Send alert update to WebSocket."""
-        await self.send(text_data=json.dumps({
-            "type": "alert_update",
-            "alert": event["alert"],
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "alert_update",
+                    "alert": event["alert"],
+                }
+            )
+        )
 
 
 class AnalyticsConsumer(AsyncWebsocketConsumer):
@@ -87,10 +99,14 @@ class AnalyticsConsumer(AsyncWebsocketConsumer):
 
     async def analytics_update(self, event):
         """Send analytics update to WebSocket."""
-        await self.send(text_data=json.dumps({
-            "type": "analytics_update",
-            "data": event["data"],
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "analytics_update",
+                    "data": event["data"],
+                }
+            )
+        )
 
 
 class NotificationsConsumer(AsyncWebsocketConsumer):
@@ -119,7 +135,11 @@ class NotificationsConsumer(AsyncWebsocketConsumer):
 
     async def notification(self, event):
         """Send notification to WebSocket."""
-        await self.send(text_data=json.dumps({
-            "type": "notification",
-            "notification": event["notification"],
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "notification",
+                    "notification": event["notification"],
+                }
+            )
+        )

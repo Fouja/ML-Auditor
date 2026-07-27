@@ -4,6 +4,7 @@ News scraping and trigger checking.
 """
 
 import logging
+
 from celery import shared_task
 from django.utils import timezone
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 @shared_task(bind=True, max_retries=3)
 def scrape_news_feeds(self):
     """Periodically scrape all active news feeds."""
-    from apps.workspace.models import NewsFeed, NewsArticle
+    from apps.workspace.models import NewsArticle, NewsFeed
 
     feeds = NewsFeed.objects.filter(is_active=True)
     scraped_count = 0
@@ -77,11 +78,13 @@ def _fetch_feed(feed):
                     if tag == "a" and self.in_a:
                         self.in_a = False
                         if self.current_title.strip():
-                            self.articles.append({
-                                "title": self.current_title.strip(),
-                                "url": feed.url,
-                                "content": "",
-                            })
+                            self.articles.append(
+                                {
+                                    "title": self.current_title.strip(),
+                                    "url": feed.url,
+                                    "content": "",
+                                }
+                            )
 
             parser = LinkParser()
             parser.feed(response.text)
@@ -96,8 +99,8 @@ def _fetch_feed(feed):
 @shared_task(bind=True)
 def check_triggers(self):
     """Check and fire active triggers."""
-    from apps.workspace.models import Trigger, CalendarEvent
     from apps.alerts.models import AgentAlert
+    from apps.workspace.models import CalendarEvent, Trigger
 
     now = timezone.now()
     fired_count = 0
@@ -135,7 +138,9 @@ def check_triggers(self):
     )
 
     for event in upcoming:
-        reminder_time = event.start_time - timezone.timedelta(minutes=event.reminder_minutes)
+        reminder_time = event.start_time - timezone.timedelta(
+            minutes=event.reminder_minutes
+        )
         if reminder_time <= now:
             # Check if reminder already sent
             existing = AgentAlert.objects.filter(

@@ -524,7 +524,7 @@ function KijijiSection() {
             {searchMutation.data.error}
           </p>
         )}
-        {searchMutation.data?.listings?.length > 0 && (
+        {searchMutation.data?.listings && searchMutation.data.listings.length > 0 && (
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {searchMutation.data.listings.map((listing: any) => (
               <div key={listing.id} className="border rounded p-2 text-sm">
@@ -535,7 +535,7 @@ function KijijiSection() {
             ))}
           </div>
         )}
-        {searchMutation.data?.listings?.length === 0 && !searchMutation.data?.error && (
+        {searchMutation.data?.listings && searchMutation.data.listings.length === 0 && !searchMutation.data?.error && (
           <p className="text-sm text-muted-foreground">No listings found.</p>
         )}
       </div>

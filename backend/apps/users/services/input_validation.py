@@ -6,7 +6,6 @@ import html
 import re
 from typing import Any
 
-
 # Allowed HTML tags for rich content (minimal safe set)
 ALLOWED_TAGS = {"b", "i", "u", "em", "strong", "p", "br", "ul", "ol", "li", "a", "span"}
 ALLOWED_ATTRS = {"a": {"href", "title"}, "span": {"class"}}

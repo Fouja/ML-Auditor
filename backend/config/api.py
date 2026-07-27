@@ -4,7 +4,6 @@ Uses Django Ninja for type-safe, auto-documented APIs.
 """
 
 from ninja import NinjaAPI
-from ninja.security import HttpBearer
 
 from apps.users.auth import JWTAuth
 
@@ -18,12 +17,13 @@ api = NinjaAPI(
     auth=JWTAuth(),
 )
 
-# Import and register routers
-from apps.users.api import router as users_router
+from apps.agents.api import router as agents_router
+from apps.alerts.api import router as alerts_router
 from apps.data_streams.api import router as data_streams_router
 from apps.document_chunks.api import router as document_chunks_router
-from apps.alerts.api import router as alerts_router
-from apps.agents.api import router as agents_router
+
+# Import and register routers
+from apps.users.api import router as users_router
 from apps.workspace.api import router as workspace_router
 
 api.add_router("/users", users_router, tags=["Users"])

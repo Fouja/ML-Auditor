@@ -11,6 +11,7 @@ from ninja import Schema
 
 class DataStreamCreate(Schema):
     """Schema for creating a data stream."""
+
     source_type: str
     payload: Dict[str, Any]
     raw_data: Optional[Dict[str, Any]] = None
@@ -18,6 +19,7 @@ class DataStreamCreate(Schema):
 
 class DataStreamResponse(Schema):
     """Schema for data stream response."""
+
     id: UUID
     source_type: str
     payload: Dict[str, Any]
@@ -33,6 +35,7 @@ class DataStreamResponse(Schema):
 
 class DataStreamListResponse(Schema):
     """Schema for paginated data stream list."""
+
     items: List[DataStreamResponse]
     total: int
     page: int
@@ -41,6 +44,7 @@ class DataStreamListResponse(Schema):
 
 class DataStreamFilter(Schema):
     """Schema for filtering data streams."""
+
     source_type: Optional[str] = None
     status: Optional[str] = None
     start_date: Optional[datetime] = None

@@ -5,7 +5,7 @@ Alert API endpoints for ML-Auditor.
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.utils import timezone
-from ninja import Router, Query
+from ninja import Query, Router
 from ninja.errors import HttpError
 
 from .models import AgentAlert

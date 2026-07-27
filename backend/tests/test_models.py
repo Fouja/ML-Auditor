@@ -59,6 +59,7 @@ class TestUserModel:
 class TestWorkspaceModels:
     def test_create_task(self, user):
         from apps.workspace.models import Task
+
         task = Task.objects.create(
             user=user, title="Test Task", status="todo", priority="high"
         )
@@ -68,11 +69,13 @@ class TestWorkspaceModels:
 
     def test_task_str(self, user):
         from apps.workspace.models import Task
+
         task = Task.objects.create(user=user, title="My Task", status="todo")
         assert "My Task" in str(task)
 
     def test_create_calendar_event(self, user):
         from apps.workspace.models import CalendarEvent
+
         event = CalendarEvent.objects.create(
             user=user,
             title="Meeting",
@@ -86,6 +89,7 @@ class TestWorkspaceModels:
 class TestIntegrationModels:
     def test_integration_connection(self, user):
         from apps.integrations.models import IntegrationConnection
+
         conn = IntegrationConnection.objects.create(
             user=user, service="email", status="active"
         )
@@ -94,12 +98,11 @@ class TestIntegrationModels:
 
     def test_sync_log(self, user):
         from apps.integrations.models import IntegrationConnection, SyncLog
+
         conn = IntegrationConnection.objects.create(
             user=user, service="gmail", status="active"
         )
-        log = SyncLog.objects.create(
-            connection=conn, success=True, items_synced=10
-        )
+        log = SyncLog.objects.create(connection=conn, success=True, items_synced=10)
         assert log.success is True
         assert log.items_synced == 10
 
@@ -108,6 +111,7 @@ class TestIntegrationModels:
 class TestAlertModel:
     def test_create_alert(self, user):
         from apps.alerts.models import AgentAlert
+
         alert = AgentAlert.objects.create(
             user=user,
             title="Critical Alert",

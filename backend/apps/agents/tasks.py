@@ -3,6 +3,7 @@ Celery tasks for ML-Auditor.
 """
 
 import logging
+
 from celery import shared_task
 from django.utils import timezone
 
@@ -47,7 +48,7 @@ def generate_embeddings(self, chunk_id):
     from apps.document_chunks.models import DocumentChunk
 
     try:
-        chunk = DocumentChunk.objects.get(id=chunk_id)
+        chunk = DocumentChunk.objects.get(id=chunk_id)  # noqa: F841
         logger.info(f"Generating embeddings for chunk {chunk_id}")
 
         # TODO: Implement NVIDIA NIM embedding generation
@@ -93,7 +94,7 @@ def sync_gmail(user_id):
     from apps.users.models import User
 
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.get(id=user_id)  # noqa: F841
         logger.info(f"Syncing Gmail for user {user_id}")
 
         # TODO: Implement Gmail sync logic
@@ -114,7 +115,7 @@ def sync_plaid(user_id):
     from apps.users.models import User
 
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.get(id=user_id)  # noqa: F841
         logger.info(f"Syncing Plaid for user {user_id}")
 
         # TODO: Implement Plaid sync logic

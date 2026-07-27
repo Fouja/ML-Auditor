@@ -3,10 +3,10 @@ External service clients for ML-Auditor.
 """
 
 from .base_oauth import BaseOAuthClient
-from .gmail_client import GmailClient
 from .calendar_client import CalendarClient
-from .plaid_client import PlaidClient
+from .gmail_client import GmailClient
 from .kijiji_scraper import KijijiScraperService
+from .plaid_client import PlaidClient
 
 __all__ = [
     "BaseOAuthClient",

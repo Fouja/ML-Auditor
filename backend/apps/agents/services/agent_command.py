@@ -8,7 +8,6 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
-
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -62,8 +61,14 @@ AVAILABLE_TOOLS = [
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Task title"},
-                    "status": {"type": "string", "enum": ["todo", "in_progress", "review", "done"]},
-                    "priority": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+                    "status": {
+                        "type": "string",
+                        "enum": ["todo", "in_progress", "review", "done"],
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high", "critical"],
+                    },
                     "description": {"type": "string"},
                 },
                 "required": ["title"],
@@ -130,7 +135,10 @@ AVAILABLE_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "days": {"type": "integer", "description": "Number of days to analyze"},
+                    "days": {
+                        "type": "integer",
+                        "description": "Number of days to analyze",
+                    },
                 },
             },
         },
@@ -161,7 +169,10 @@ AVAILABLE_TOOLS = [
                     "original_subject": {"type": "string"},
                     "original_from": {"type": "string"},
                     "draft_body": {"type": "string"},
-                    "tone": {"type": "string", "enum": ["professional", "friendly", "formal", "casual"]},
+                    "tone": {
+                        "type": "string",
+                        "enum": ["professional", "friendly", "formal", "casual"],
+                    },
                 },
                 "required": ["original_subject", "draft_body"],
             },
@@ -197,6 +208,7 @@ class AgentCommandService:
     def _get_tool_executor(self):
         if self.tool_executor is None:
             from .tool_executor import ToolExecutor
+
             self.tool_executor = ToolExecutor(self.user)
         return self.tool_executor
 
@@ -218,7 +230,9 @@ class AgentCommandService:
                 "metadata": {...}
             }
         """
-        system_prompt = AGENT_SYSTEM_PROMPTS.get(agent_type, AGENT_SYSTEM_PROMPTS["general"])
+        system_prompt = AGENT_SYSTEM_PROMPTS.get(
+            agent_type, AGENT_SYSTEM_PROMPTS["general"]
+        )
         messages = [{"role": "system", "content": system_prompt}]
 
         if conversation_history:
@@ -260,15 +274,24 @@ class AgentCommandService:
                     # Execute the tool
                     executor = self._get_tool_executor()
                     result = await executor.execute(tool_name, args)
-                    tool_calls.append({"tool": tool_name, "args": args, "result": result})
-                    actions_taken.append({"action": tool_name, "status": "success" if result.get("success") else "error"})
+                    tool_calls.append(
+                        {"tool": tool_name, "args": args, "result": result}
+                    )
+                    actions_taken.append(
+                        {
+                            "action": tool_name,
+                            "status": "success" if result.get("success") else "error",
+                        }
+                    )
 
                     # Feed result back to NIM
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": json.dumps(result),
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": json.dumps(result),
+                        }
+                    )
             else:
                 # No more tool calls — return the text response
                 return {
@@ -297,13 +320,15 @@ class AgentCommandService:
         if not NIM_API_KEY:
             logger.warning("NIM_API_KEY not set — using fallback response")
             return {
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "AI services are not configured. Please set the NIM_API_KEY.",
-                    },
-                    "finish_reason": "stop",
-                }]
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "AI services are not configured. Please set the NIM_API_KEY.",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
             }
 
         try:
@@ -331,6 +356,7 @@ class AgentCommandService:
 
 
 # ─── Conversation memory ─────────────────────────────────────────────
+
 
 class ConversationStore:
     """Simple in-memory conversation store per user."""

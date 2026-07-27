@@ -4,10 +4,11 @@ Chat, workflows, voice, notifications.
 """
 
 import asyncio
+from typing import Any, Dict, Optional
+
 from django.core.cache import cache
-from ninja import Router, Query
+from ninja import Query, Router
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
 
 from .schemas import AgentMessage, AgentResponse, AgentStatus
 
@@ -15,6 +16,7 @@ router = Router()
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────
+
 
 class WorkflowRequestSchema(BaseModel):
     workflow: str
@@ -34,6 +36,7 @@ class VoiceCommandSchema(BaseModel):
 
 # ─── Chat ────────────────────────────────────────────────────────────
 
+
 @router.post("/chat", response=AgentResponse)
 def chat_with_agent(request, payload: AgentMessage):
     """Send message to AI agent with tool execution."""
@@ -47,15 +50,19 @@ def chat_with_agent(request, payload: AgentMessage):
 
     # Process message
     service = AgentCommandService(user)
-    result = asyncio.run(service.process_message(
-        content=payload.content,
-        agent_type=agent_type,
-        conversation_history=history,
-    ))
+    result = asyncio.run(
+        service.process_message(
+            content=payload.content,
+            agent_type=agent_type,
+            conversation_history=history,
+        )
+    )
 
     # Store conversation
     ConversationStore.add_message(str(user.id), agent_type, "user", payload.content)
-    ConversationStore.add_message(str(user.id), agent_type, "assistant", result["response"])
+    ConversationStore.add_message(
+        str(user.id), agent_type, "assistant", result["response"]
+    )
 
     return AgentResponse(
         response=result["response"],
@@ -69,12 +76,14 @@ def chat_with_agent(request, payload: AgentMessage):
 def clear_chat_history(request, agent_type: str = Query("general")):
     """Clear conversation history for an agent."""
     from .services.agent_command import ConversationStore
+
     user = request.auth
     ConversationStore.clear(str(user.id), agent_type)
     return {"success": True}
 
 
 # ─── Agent Status ────────────────────────────────────────────────────
+
 
 @router.get("/status", response=AgentStatus)
 def get_agent_status(request):
@@ -130,10 +139,12 @@ def get_agent_status(request):
 
 # ─── Workflows ───────────────────────────────────────────────────────
 
+
 @router.post("/workflows/execute")
 def execute_workflow(request, payload: WorkflowRequestSchema):
     """Execute a smart workflow."""
     from .services.workflows import execute_workflow
+
     user = request.auth
     result = execute_workflow(payload.workflow, user, payload.data)
     return result.to_dict()
@@ -146,6 +157,7 @@ def list_workflows(request):
     if cached:
         return cached
     from .services.workflows import WORKFLOWS
+
     result = {
         "workflows": [
             {"name": name, "description": handler.__doc__ or ""}
@@ -157,6 +169,7 @@ def list_workflows(request):
 
 
 # ─── Voice ───────────────────────────────────────────────────────────
+
 
 @router.post("/voice")
 def process_voice_command(request, payload: VoiceCommandSchema):
@@ -170,10 +183,12 @@ def process_voice_command(request, payload: VoiceCommandSchema):
 
 # ─── Notifications ───────────────────────────────────────────────────
 
+
 @router.get("/notifications/preferences")
 def get_notification_prefs(request):
     """Get user notification preferences."""
     from .services.notifications import NotificationPreferences
+
     user = request.auth
     return NotificationPreferences.get_preferences(user)
 
@@ -182,6 +197,7 @@ def get_notification_prefs(request):
 def update_notification_prefs(request, payload: NotificationPrefsSchema):
     """Update user notification preferences."""
     from .services.notifications import NotificationPreferences
+
     user = request.auth
     prefs = {k: v for k, v in payload.dict().items() if v is not None}
     return NotificationPreferences.update_preferences(user, prefs)
@@ -191,10 +207,14 @@ def update_notification_prefs(request, payload: NotificationPrefsSchema):
 def test_notification(request):
     """Send a test notification."""
     from .services.notifications import AlertRouter
+
     user = request.auth
-    result = AlertRouter.send_notification(user, {
-        "title": "Test Notification",
-        "description": "This is a test notification from ML-Auditor.",
-        "severity": "low",
-    })
+    result = AlertRouter.send_notification(
+        user,
+        {
+            "title": "Test Notification",
+            "description": "This is a test notification from ML-Auditor.",
+            "severity": "low",
+        },
+    )
     return {"sent": result}

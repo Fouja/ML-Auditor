@@ -2,20 +2,12 @@
 DataStream API endpoints for ML-Auditor.
 """
 
-from typing import List
-
 from django.core.paginator import Paginator
-from django.utils import timezone
-from ninja import Router, Query
+from ninja import Query, Router
 from ninja.errors import HttpError
 
 from .models import DataStream
-from .schemas import (
-    DataStreamCreate,
-    DataStreamFilter,
-    DataStreamListResponse,
-    DataStreamResponse,
-)
+from .schemas import DataStreamCreate, DataStreamListResponse, DataStreamResponse
 
 router = Router()
 

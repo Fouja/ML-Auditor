@@ -6,6 +6,7 @@ Encrypts tokens before storing in database.
 import base64
 import hashlib
 import logging
+
 from cryptography.fernet import Fernet
 from django.conf import settings
 
@@ -47,9 +48,11 @@ def decrypt_token(encrypted: str) -> str:
 def encrypt_user_tokens(user) -> None:
     """Encrypt all OAuth tokens on a user model."""
     fields = [
-        "google_access_token", "google_refresh_token",
+        "google_access_token",
+        "google_refresh_token",
         "plaid_access_token",
-        "canva_access_token", "canva_refresh_token",
+        "canva_access_token",
+        "canva_refresh_token",
         "email_imap_password",
     ]
     for field in fields:

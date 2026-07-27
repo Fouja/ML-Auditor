@@ -3,18 +3,14 @@ Generic IMAP/SMTP email client.
 Works with any email provider (Gmail, Outlook, Yahoo, custom, etc.).
 """
 
-import imaplib
-import smtplib
 import email as email_lib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.header import decode_header
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-
-from django.conf import settings
-
+import imaplib
 import logging
+import smtplib
+from email.header import decode_header
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -83,17 +79,23 @@ def _parse_email(msg: email_lib.message.Message) -> Dict[str, Any]:
             filename = part.get_filename()
 
             if filename:
-                attachments.append({
-                    "filename": _decode_header_value(filename),
-                    "content_type": content_type,
-                    "size": len(part.get_payload(decode=True) or b""),
-                })
-            elif content_type == "text/plain" and "attachment" not in content_disposition:
+                attachments.append(
+                    {
+                        "filename": _decode_header_value(filename),
+                        "content_type": content_type,
+                        "size": len(part.get_payload(decode=True) or b""),
+                    }
+                )
+            elif (
+                content_type == "text/plain" and "attachment" not in content_disposition
+            ):
                 payload = part.get_payload(decode=True)
                 if payload:
                     charset = part.get_content_charset() or "utf-8"
                     body_text += payload.decode(charset, errors="replace")
-            elif content_type == "text/html" and "attachment" not in content_disposition:
+            elif (
+                content_type == "text/html" and "attachment" not in content_disposition
+            ):
                 payload = part.get_payload(decode=True)
                 if payload:
                     charset = part.get_content_charset() or "utf-8"
@@ -257,7 +259,9 @@ class EmailClient:
 
         return messages
 
-    def get_message_by_id(self, uid: str, folder: str = "INBOX") -> Optional[Dict[str, Any]]:
+    def get_message_by_id(
+        self, uid: str, folder: str = "INBOX"
+    ) -> Optional[Dict[str, Any]]:
         """Get a single message by UID."""
         conn = self._connect_imap()
         conn.select(f'"{folder}"', readonly=True)

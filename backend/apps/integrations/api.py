@@ -4,24 +4,24 @@ Email (IMAP/SMTP + Gmail), Calendar, Plaid, Canva, Kijiji.
 """
 
 from django.conf import settings
-from django.utils import timezone
-from ninja import Router, Query
+from ninja import Query, Router
 
 from .schemas import (
-    EmailSendSchema,
     CalendarEventCreateSchema,
-    PlaidExchangeSchema,
-    KijijiSearchSchema,
+    CanvaCompetitorSchema,
+    CanvaSearchSchema,
+    EmailSendSchema,
     IMAPConfigSchema,
     IMAPSendSchema,
-    CanvaSearchSchema,
-    CanvaCompetitorSchema,
+    KijijiSearchSchema,
+    PlaidExchangeSchema,
 )
 
 router = Router()
 
 
 # ─── Connection status ───────────────────────────────────────────────
+
 
 @router.get("/status")
 def integration_status(request):
@@ -42,6 +42,7 @@ def integration_status(request):
 
 # ─── Generic IMAP/SMTP Email ────────────────────────────────────────
 
+
 @router.post("/email/configure")
 def email_configure(request, payload: IMAPConfigSchema):
     """Configure IMAP/SMTP settings for any email provider."""
@@ -53,10 +54,17 @@ def email_configure(request, payload: IMAPConfigSchema):
     user.email_smtp_port = payload.smtp_port
     user.email_imap_password = payload.password
     user.email_use_ssl = payload.use_ssl
-    user.save(update_fields=[
-        "email_provider", "email_imap_host", "email_imap_port",
-        "email_smtp_host", "email_smtp_port", "email_imap_password", "email_use_ssl",
-    ])
+    user.save(
+        update_fields=[
+            "email_provider",
+            "email_imap_host",
+            "email_imap_port",
+            "email_smtp_host",
+            "email_smtp_port",
+            "email_imap_password",
+            "email_use_ssl",
+        ]
+    )
     return {"success": True}
 
 
@@ -79,7 +87,10 @@ def email_test(request):
 
     user = request.auth
     if not user.email_imap_host or not user.email_imap_password:
-        return {"success": False, "error": "Email not configured. Please configure email first."}
+        return {
+            "success": False,
+            "error": "Email not configured. Please configure email first.",
+        }
 
     client = EmailClient(
         email_address=user.email,
@@ -125,7 +136,12 @@ def email_sync(request, folder: str = "INBOX", limit: int = Query(50)):
 
     user = request.auth
     if not user.email_imap_host or not user.email_imap_password:
-        return {"messages": [], "count": 0, "folder": folder, "error": "Email not configured"}
+        return {
+            "messages": [],
+            "count": 0,
+            "folder": folder,
+            "error": "Email not configured",
+        }
 
     try:
         client = EmailClient(
@@ -143,11 +159,22 @@ def email_sync(request, folder: str = "INBOX", limit: int = Query(50)):
             "folder": folder,
         }
     except ConnectionRefusedError:
-        return {"messages": [], "count": 0, "folder": folder, "error": "Could not connect to email server. Check your IMAP host settings."}
+        return {
+            "messages": [],
+            "count": 0,
+            "folder": folder,
+            "error": "Could not connect to email server. Check your IMAP host settings.",
+        }
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Email sync error: {e}")
-        return {"messages": [], "count": 0, "folder": folder, "error": f"Email sync failed: {str(e)}"}
+        return {
+            "messages": [],
+            "count": 0,
+            "folder": folder,
+            "error": f"Email sync failed: {str(e)}",
+        }
 
 
 @router.get("/email/search")
@@ -172,6 +199,7 @@ def email_search(request, q: str = "", folder: str = "INBOX", limit: int = Query
         return {"messages": messages, "count": len(messages)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Email search error: {e}")
         return {"messages": [], "count": 0, "error": f"Email search failed: {str(e)}"}
 
@@ -183,7 +211,10 @@ def email_send(request, payload: IMAPSendSchema):
 
     user = request.auth
     if not user.email_smtp_host or not user.email_imap_password:
-        return {"success": False, "error": "Email not configured. Please configure SMTP settings first."}
+        return {
+            "success": False,
+            "error": "Email not configured. Please configure SMTP settings first.",
+        }
 
     try:
         client = EmailClient(
@@ -204,11 +235,13 @@ def email_send(request, payload: IMAPSendSchema):
         return {"success": True}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Email send error: {e}")
         return {"success": False, "error": f"Failed to send email: {str(e)}"}
 
 
 # ─── Gmail (Google API) ─────────────────────────────────────────────
+
 
 @router.get("/gmail/status")
 def gmail_status(request):
@@ -237,16 +270,19 @@ def gmail_sync(request, max_results: int = Query(50)):
             subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
             sender = next((h["value"] for h in headers if h["name"] == "From"), "")
             date = next((h["value"] for h in headers if h["name"] == "Date"), "")
-            results.append({
-                "id": msg["id"],
-                "subject": subject,
-                "from": sender,
-                "date": date,
-                "snippet": full.get("snippet", ""),
-            })
+            results.append(
+                {
+                    "id": msg["id"],
+                    "subject": subject,
+                    "from": sender,
+                    "date": date,
+                    "snippet": full.get("snippet", ""),
+                }
+            )
         return {"messages": results, "count": len(results)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Gmail sync error: {e}")
         return {"messages": [], "count": 0, "error": f"Gmail sync failed: {str(e)}"}
 
@@ -261,15 +297,19 @@ def gmail_send(request, payload: EmailSendSchema):
 
     try:
         gmail = GmailClient(user)
-        result = gmail.send_message(to=payload.to, subject=payload.subject, body=payload.body, cc=payload.cc)
+        result = gmail.send_message(
+            to=payload.to, subject=payload.subject, body=payload.body, cc=payload.cc
+        )
         return {"success": True, "message_id": result.get("id")}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Gmail send error: {e}")
         return {"success": False, "error": f"Failed to send email: {str(e)}"}
 
 
 # ─── Google Calendar ─────────────────────────────────────────────────
+
 
 @router.get("/calendar/status")
 def calendar_status(request):
@@ -279,8 +319,9 @@ def calendar_status(request):
 
 @router.get("/calendar/events")
 def calendar_events(request, hours: int = Query(168)):
-    from apps.users.services import CalendarClient
     from datetime import datetime, timedelta
+
+    from apps.users.services import CalendarClient
 
     user = request.auth
     if not user.google_access_token:
@@ -294,27 +335,31 @@ def calendar_events(request, hours: int = Query(168)):
         for ev in events:
             start = ev.get("start", {}).get("dateTime", ev.get("start", {}).get("date"))
             end = ev.get("end", {}).get("dateTime", ev.get("end", {}).get("date"))
-            results.append({
-                "id": ev.get("id"),
-                "summary": ev.get("summary", ""),
-                "description": ev.get("description", ""),
-                "location": ev.get("location", ""),
-                "start": start,
-                "end": end,
-                "attendees": [a.get("email") for a in ev.get("attendees", [])],
-                "html_link": ev.get("htmlLink"),
-            })
+            results.append(
+                {
+                    "id": ev.get("id"),
+                    "summary": ev.get("summary", ""),
+                    "description": ev.get("description", ""),
+                    "location": ev.get("location", ""),
+                    "start": start,
+                    "end": end,
+                    "attendees": [a.get("email") for a in ev.get("attendees", [])],
+                    "html_link": ev.get("htmlLink"),
+                }
+            )
         return {"events": results, "count": len(results)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Calendar events error: {e}")
         return {"events": [], "count": 0, "error": f"Failed to fetch events: {str(e)}"}
 
 
 @router.post("/calendar/events")
 def create_calendar_event(request, payload: CalendarEventCreateSchema):
-    from apps.users.services import CalendarClient
     from datetime import datetime
+
+    from apps.users.services import CalendarClient
 
     user = request.auth
     if not user.google_access_token:
@@ -333,11 +378,13 @@ def create_calendar_event(request, payload: CalendarEventCreateSchema):
         return {"success": True, "event_id": event.get("id")}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Create calendar event error: {e}")
         return {"success": False, "error": f"Failed to create event: {str(e)}"}
 
 
 # ─── Plaid ───────────────────────────────────────────────────────────
+
 
 @router.get("/plaid/status")
 def plaid_status(request):
@@ -353,9 +400,13 @@ def plaid_link_token(request):
     try:
         plaid = PlaidClient(user)
         result = plaid.create_link_token(user_id=str(user.id))
-        return {"link_token": result.get("link_token"), "expiration": result.get("expiration")}
+        return {
+            "link_token": result.get("link_token"),
+            "expiration": result.get("expiration"),
+        }
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Plaid link token error: {e}")
         return {"link_token": None, "error": f"Failed to create link token: {str(e)}"}
 
@@ -375,6 +426,7 @@ def plaid_exchange(request, payload: PlaidExchangeSchema):
         return {"success": True}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Plaid exchange error: {e}")
         return {"success": False, "error": f"Token exchange failed: {str(e)}"}
 
@@ -393,14 +445,20 @@ def plaid_accounts(request):
         return {"accounts": accounts, "count": len(accounts)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Plaid accounts error: {e}")
-        return {"accounts": [], "count": 0, "error": f"Failed to fetch accounts: {str(e)}"}
+        return {
+            "accounts": [],
+            "count": 0,
+            "error": f"Failed to fetch accounts: {str(e)}",
+        }
 
 
 @router.get("/plaid/transactions")
 def plaid_transactions(request, days: int = Query(30), count: int = Query(100)):
-    from apps.users.services import PlaidClient
     from datetime import datetime, timedelta
+
+    from apps.users.services import PlaidClient
 
     user = request.auth
     if not user.plaid_access_token:
@@ -410,12 +468,19 @@ def plaid_transactions(request, days: int = Query(30), count: int = Query(100)):
         plaid = PlaidClient(user)
         end = datetime.now()
         start = end - timedelta(days=days)
-        transactions = plaid.get_transactions(start_date=start, end_date=end, count=count)
+        transactions = plaid.get_transactions(
+            start_date=start, end_date=end, count=count
+        )
         return {"transactions": transactions, "count": len(transactions)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Plaid transactions error: {e}")
-        return {"transactions": [], "count": 0, "error": f"Failed to fetch transactions: {str(e)}"}
+        return {
+            "transactions": [],
+            "count": 0,
+            "error": f"Failed to fetch transactions: {str(e)}",
+        }
 
 
 @router.get("/plaid/balances")
@@ -432,11 +497,13 @@ def plaid_balances(request):
         return {"balances": balances}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Plaid balances error: {e}")
         return {"balances": [], "error": f"Failed to fetch balances: {str(e)}"}
 
 
 # ─── Canva ──────────────────────────────────────────────────────────
+
 
 @router.get("/canva/status")
 def canva_status(request):
@@ -459,8 +526,13 @@ def canva_designs(request, query: str = "", limit: int = Query(20)):
         return {"designs": designs, "count": len(designs)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Canva designs error: {e}")
-        return {"designs": [], "count": 0, "error": f"Failed to fetch designs: {str(e)}"}
+        return {
+            "designs": [],
+            "count": 0,
+            "error": f"Failed to fetch designs: {str(e)}",
+        }
 
 
 @router.get("/canva/design/{design_id}")
@@ -478,6 +550,7 @@ def canva_design_detail(request, design_id: str):
         return design
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Canva design detail error: {e}")
         return {"error": f"Failed to fetch design: {str(e)}"}
 
@@ -497,8 +570,13 @@ def canva_brand_templates(request):
         return {"templates": templates, "count": len(templates)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Canva brand templates error: {e}")
-        return {"templates": [], "count": 0, "error": f"Failed to fetch templates: {str(e)}"}
+        return {
+            "templates": [],
+            "count": 0,
+            "error": f"Failed to fetch templates: {str(e)}",
+        }
 
 
 @router.post("/canva/competitor-monitor")
@@ -522,6 +600,7 @@ def canva_competitor_monitor(request, payload: CanvaCompetitorSchema):
         return result
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Canva competitor monitor error: {e}")
         return {"error": f"Failed to monitor competitors: {str(e)}"}
 
@@ -544,11 +623,17 @@ def canva_search_templates(request, payload: CanvaSearchSchema):
         return {"templates": templates, "count": len(templates)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Canva search templates error: {e}")
-        return {"templates": [], "count": 0, "error": f"Failed to search templates: {str(e)}"}
+        return {
+            "templates": [],
+            "count": 0,
+            "error": f"Failed to search templates: {str(e)}",
+        }
 
 
 # ─── Kijiji ──────────────────────────────────────────────────────────
+
 
 @router.post("/kijiji/search")
 def kijiji_search(request, payload: KijijiSearchSchema):
@@ -566,6 +651,7 @@ def kijiji_search(request, payload: KijijiSearchSchema):
         return {"listings": listings, "count": len(listings)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Kijiji search error: {e}")
         return {"listings": [], "count": 0, "error": f"Kijiji search failed: {str(e)}"}
 
@@ -580,11 +666,17 @@ def kijiji_messages(request, limit: int = Query(50)):
         return {"messages": messages, "count": len(messages)}
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Kijiji messages error: {e}")
-        return {"messages": [], "count": 0, "error": f"Kijiji messages failed: {str(e)}"}
+        return {
+            "messages": [],
+            "count": 0,
+            "error": f"Kijiji messages failed: {str(e)}",
+        }
 
 
 # ─── OAuth URLs ──────────────────────────────────────────────────────
+
 
 @router.get("/oauth/google")
 def google_oauth_url(request):
@@ -621,4 +713,5 @@ def canva_oauth_url(request):
 # ─── LLM Configuration ─────────────────────────────────────────────────
 # Import LLM router and add it to the main router
 from .llm_api import router as llm_router
+
 router.add_router("/llm-configurations", llm_router)

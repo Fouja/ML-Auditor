@@ -4,7 +4,11 @@ WebSocket URL routing for ML-Auditor.
 
 from django.urls import re_path
 
-from apps.alerts.consumers import AlertsConsumer, AnalyticsConsumer, NotificationsConsumer
+from apps.alerts.consumers import (
+    AlertsConsumer,
+    AnalyticsConsumer,
+    NotificationsConsumer,
+)
 
 websocket_urlpatterns = [
     re_path(

@@ -11,6 +11,7 @@ from ninja import Schema
 
 class DocumentChunkResponse(Schema):
     """Schema for document chunk response."""
+
     id: UUID
     content: str
     cluster_category: str
@@ -27,6 +28,7 @@ class DocumentChunkResponse(Schema):
 
 class DocumentChunkSearch(Schema):
     """Schema for semantic search."""
+
     query: str
     limit: int = 10
     cluster_category: Optional[str] = None
@@ -34,12 +36,14 @@ class DocumentChunkSearch(Schema):
 
 class SearchResult(Schema):
     """Schema for search result."""
+
     chunk: DocumentChunkResponse
     score: float
 
 
 class DocumentChunkListResponse(Schema):
     """Schema for paginated document chunk list."""
+
     items: List[DocumentChunkResponse]
     total: int
     page: int

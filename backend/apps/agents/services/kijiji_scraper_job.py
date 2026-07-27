@@ -3,7 +3,6 @@ Kijiji scraper job for marketplace monitoring.
 """
 
 import logging
-from typing import Any, Dict
 
 from celery import shared_task
 from django.utils import timezone

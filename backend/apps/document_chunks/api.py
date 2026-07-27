@@ -5,7 +5,7 @@ DocumentChunk API endpoints for ML-Auditor.
 from typing import List
 
 from django.core.paginator import Paginator
-from ninja import Router, Query
+from ninja import Query, Router
 from ninja.errors import HttpError
 
 from .models import DocumentChunk
@@ -22,9 +22,7 @@ def list_document_chunks(
     cluster_category: str = Query(None),
 ):
     """List document chunks for current user's data streams."""
-    queryset = DocumentChunk.objects.filter(
-        stream__user=request.auth
-    )
+    queryset = DocumentChunk.objects.filter(stream__user=request.auth)
 
     if cluster_category:
         queryset = queryset.filter(cluster_category=cluster_category)

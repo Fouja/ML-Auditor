@@ -3,10 +3,8 @@ Logging middleware for ML-Auditor.
 Structured request/response logging for ELK stack.
 """
 
-import json
 import logging
 import time
-import traceback
 import uuid
 
 from django.http import JsonResponse
@@ -45,7 +43,9 @@ class ErrorHandlingMiddleware(MiddlewareMixin):
             extra={
                 "request_method": getattr(request, "method", None),
                 "request_path": getattr(request, "path", None),
-                "user_id": str(getattr(request, "user", None) and request.user.id or ""),
+                "user_id": str(
+                    getattr(request, "user", None) and request.user.id or ""
+                ),
                 "exception_type": type(exception).__name__,
             },
         )

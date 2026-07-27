@@ -4,8 +4,9 @@ Tasks, Calendar Events, News Feeds, and Widget layout.
 """
 
 import uuid
-from django.db import models
+
 from django.conf import settings
+from django.db import models
 
 
 class Task(models.Model):

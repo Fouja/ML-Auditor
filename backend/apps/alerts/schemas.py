@@ -11,6 +11,7 @@ from ninja import Schema
 
 class AlertResponse(Schema):
     """Schema for alert response."""
+
     id: UUID
     title: str
     description: str
@@ -30,6 +31,7 @@ class AlertResponse(Schema):
 
 class AlertUpdate(Schema):
     """Schema for updating alert."""
+
     status: Optional[str] = None
     acknowledged_at: Optional[datetime] = None
     executed_at: Optional[datetime] = None
@@ -37,6 +39,7 @@ class AlertUpdate(Schema):
 
 class AlertListResponse(Schema):
     """Schema for paginated alert list."""
+
     items: List[AlertResponse]
     total: int
     page: int
@@ -49,6 +52,7 @@ class AlertListResponse(Schema):
 
 class AlertStats(Schema):
     """Schema for alert statistics."""
+
     total: int
     pending: int
     acknowledged: int

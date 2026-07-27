@@ -45,6 +45,7 @@ class ToolExecutor:
                 status=args.get("status", "todo"),
                 priority=args.get("priority", "medium"),
             )
+
         task = await sync_to_async(_create)()
         return {"success": True, "task_id": str(task.id), "title": task.title}
 
@@ -54,6 +55,7 @@ class ToolExecutor:
         user = self.user
         if user.email_imap_host and user.email_imap_password:
             from apps.users.services.email_client import EmailClient
+
             client = EmailClient(
                 email_address=user.email,
                 password=user.email_imap_password,
@@ -71,8 +73,14 @@ class ToolExecutor:
             return {"success": True, "to": args["to"], "subject": args["subject"]}
         elif user.google_access_token:
             from apps.users.services import GmailClient
+
             gmail = GmailClient(user)
-            gmail.send_message(to=args["to"], subject=args["subject"], body=args["body"], cc=args.get("cc"))
+            gmail.send_message(
+                to=args["to"],
+                subject=args["subject"],
+                body=args["body"],
+                cc=args.get("cc"),
+            )
             return {"success": True, "to": args["to"], "subject": args["subject"]}
         return {"success": False, "error": "No email provider configured"}
 
@@ -80,6 +88,7 @@ class ToolExecutor:
         user = self.user
         if user.email_imap_host and user.email_imap_password:
             from apps.users.services.email_client import EmailClient
+
             client = EmailClient(
                 email_address=user.email,
                 password=user.email_imap_password,
@@ -113,8 +122,10 @@ class ToolExecutor:
     async def _exec_create_calendar_event(self, args: Dict) -> Dict:
         user = self.user
         if user.google_access_token:
-            from apps.users.services import CalendarClient
             from datetime import datetime
+
+            from apps.users.services import CalendarClient
+
             cal = CalendarClient(user)
             event = cal.create_event(
                 summary=args["summary"],
@@ -130,6 +141,7 @@ class ToolExecutor:
 
     async def _exec_search_kijiji(self, args: Dict) -> Dict:
         from apps.users.services import KijijiScraperService
+
         scraper = KijijiScraperService(user=self.user)
         listings = scraper.search_listings(
             query=args["query"],
@@ -144,8 +156,10 @@ class ToolExecutor:
     async def _exec_analyze_transactions(self, args: Dict) -> Dict:
         user = self.user
         if user.plaid_access_token:
-            from apps.users.services import PlaidClient
             from datetime import datetime, timedelta
+
+            from apps.users.services import PlaidClient
+
             plaid = PlaidClient(user)
             days = args.get("days", 30)
             end = datetime.now()
@@ -155,7 +169,9 @@ class ToolExecutor:
             total_spent = sum(t.get("amount", 0) for t in transactions)
             categories = {}
             for tx in transactions:
-                cat = tx.get("category", ["Other"])[0] if tx.get("category") else "Other"
+                cat = (
+                    tx.get("category", ["Other"])[0] if tx.get("category") else "Other"
+                )
                 categories[cat] = categories.get(cat, 0) + tx.get("amount", 0)
             return {
                 "success": True,
@@ -171,6 +187,7 @@ class ToolExecutor:
         user = self.user
         if user.canva_access_token:
             from apps.users.services.canva_client import CanvaClient
+
             client = CanvaClient(user.canva_access_token)
             result = client.track_competitor_keywords(keywords=args.get("keywords", []))
             return {"success": True, **result}

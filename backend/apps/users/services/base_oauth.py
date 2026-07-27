@@ -6,7 +6,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-from django.conf import settings
 from requests import RequestException, Session
 
 logger = logging.getLogger(__name__)
@@ -88,9 +87,7 @@ class BaseOAuthClient(ABC):
         """Make a GET request."""
         return self._make_request("GET", url, params=params)
 
-    def post(
-        self, url: str, data: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    def post(self, url: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make a POST request."""
         return self._make_request("POST", url, data=data)
 

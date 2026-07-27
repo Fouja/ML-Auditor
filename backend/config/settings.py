@@ -10,7 +10,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
-from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,7 +19,10 @@ env = environ.Env(
     DJANGO_DEBUG=(bool, False),
     DJANGO_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     DJANGO_SECRET_KEY=(str, "django-insecure-change-me-in-production"),
-    DJANGO_DATABASE_URL=(str, "postgres://mlauditor:mlauditor@localhost:5432/mlauditor_db"),
+    DJANGO_DATABASE_URL=(
+        str,
+        "postgres://mlauditor:mlauditor@localhost:5432/mlauditor_db",
+    ),
     DJANGO_CACHE_URL=(str, "redis://localhost:6379/0"),
     DJANGO_CELERY_BROKER_URL=(str, "redis://localhost:6379/1"),
     DJANGO_CELERY_RESULT_BACKEND=(str, "redis://localhost:6379/2"),
@@ -133,7 +135,9 @@ CACHES = {
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
@@ -225,6 +229,7 @@ if SENTRY_DSN:
 # ===========================================
 # Structured Logging for ELK Stack
 # ===========================================
+
 
 class JSONFormatter(logging.Formatter):
     """JSON log formatter for Elasticsearch ingestion."""

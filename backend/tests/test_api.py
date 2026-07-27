@@ -11,6 +11,7 @@ def auth_client(user):
     """DRF API client with JWT."""
     client = APIClient()
     from rest_framework_simplejwt.tokens import RefreshToken
+
     refresh = RefreshToken.for_user(user)
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
     return client
@@ -35,8 +36,11 @@ class TestUsersAPI:
 
     def test_login(self):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
-        User.objects.create_user(email="login@test.com", username="login", password="pass123")
+        User.objects.create_user(
+            email="login@test.com", username="login", password="pass123"
+        )
         client = APIClient()
         resp = client.post(
             "/api/users/login",

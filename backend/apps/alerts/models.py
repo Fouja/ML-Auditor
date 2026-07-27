@@ -33,9 +33,7 @@ class AgentAlert(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
     severity = models.CharField(max_length=50, choices=SEVERITY_LEVELS)
-    status = models.CharField(
-        max_length=50, choices=STATUS_CHOICES, default="pending"
-    )
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default="pending")
 
     # Action payload for function calling
     action_payload = models.JSONField(

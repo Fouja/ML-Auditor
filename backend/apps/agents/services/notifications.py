@@ -3,8 +3,7 @@ Notification service — manages alert severity, priority rules, and notificatio
 """
 
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,9 @@ class NotificationPreferences:
             user.push_notifications = prefs["push_notifications"]
         if "webhook_url" in prefs:
             user.webhook_url = prefs["webhook_url"]
-        user.save(update_fields=["email_notifications", "push_notifications", "webhook_url"])
+        user.save(
+            update_fields=["email_notifications", "push_notifications", "webhook_url"]
+        )
         return NotificationPreferences.get_preferences(user)
 
 
@@ -127,6 +128,7 @@ class AlertRouter:
 
         if user.email_imap_host and user.email_imap_password:
             from apps.users.services.email_client import EmailClient
+
             client = EmailClient(
                 email_address=user.email,
                 password=user.email_imap_password,
@@ -138,5 +140,6 @@ class AlertRouter:
             client.send_message(to=user.email, subject=subject, body=body)
         elif user.google_access_token:
             from apps.users.services import GmailClient
+
             gmail = GmailClient(user)
             gmail.send_message(to=user.email, subject=subject, body=body)

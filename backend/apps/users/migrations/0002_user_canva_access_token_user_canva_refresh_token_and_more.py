@@ -6,53 +6,53 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('users', '0001_initial'),
+        ("users", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='user',
-            name='canva_access_token',
+            model_name="user",
+            name="canva_access_token",
             field=models.TextField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='user',
-            name='canva_refresh_token',
+            model_name="user",
+            name="canva_refresh_token",
             field=models.TextField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='user',
-            name='email_imap_host',
-            field=models.CharField(blank=True, default='', max_length=255),
+            model_name="user",
+            name="email_imap_host",
+            field=models.CharField(blank=True, default="", max_length=255),
         ),
         migrations.AddField(
-            model_name='user',
-            name='email_imap_password',
-            field=models.TextField(blank=True, default=''),
+            model_name="user",
+            name="email_imap_password",
+            field=models.TextField(blank=True, default=""),
         ),
         migrations.AddField(
-            model_name='user',
-            name='email_imap_port',
+            model_name="user",
+            name="email_imap_port",
             field=models.IntegerField(default=993),
         ),
         migrations.AddField(
-            model_name='user',
-            name='email_provider',
-            field=models.CharField(blank=True, default='custom', max_length=32),
+            model_name="user",
+            name="email_provider",
+            field=models.CharField(blank=True, default="custom", max_length=32),
         ),
         migrations.AddField(
-            model_name='user',
-            name='email_smtp_host',
-            field=models.CharField(blank=True, default='', max_length=255),
+            model_name="user",
+            name="email_smtp_host",
+            field=models.CharField(blank=True, default="", max_length=255),
         ),
         migrations.AddField(
-            model_name='user',
-            name='email_smtp_port',
+            model_name="user",
+            name="email_smtp_port",
             field=models.IntegerField(default=587),
         ),
         migrations.AddField(
-            model_name='user',
-            name='email_use_ssl',
+            model_name="user",
+            name="email_use_ssl",
             field=models.BooleanField(default=True),
         ),
     ]

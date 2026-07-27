@@ -5,13 +5,15 @@ Each workflow is a sequence of steps triggered by conditions.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 
 class WorkflowResult:
-    def __init__(self, workflow: str, success: bool, actions: List[Dict], message: str = ""):
+    def __init__(
+        self, workflow: str, success: bool, actions: List[Dict], message: str = ""
+    ):
         self.workflow = workflow
         self.success = success
         self.actions = actions
@@ -28,6 +30,7 @@ class WorkflowResult:
 
 # ─── Workflow: Confirm RDV (Appointment Confirmation) ────────────────
 
+
 def workflow_confirm_rdv(user, event_data: Dict[str, Any]) -> WorkflowResult:
     """
     Confirm an appointment:
@@ -40,6 +43,7 @@ def workflow_confirm_rdv(user, event_data: Dict[str, Any]) -> WorkflowResult:
     # Step 1: Create calendar event
     try:
         from apps.users.services import CalendarClient
+
         if user.google_access_token:
             cal = CalendarClient(user)
             event = cal.create_event(
@@ -49,7 +53,13 @@ def workflow_confirm_rdv(user, event_data: Dict[str, Any]) -> WorkflowResult:
                 description=event_data.get("description", ""),
                 location=event_data.get("location"),
             )
-            actions.append({"step": "calendar_event", "status": "created", "event_id": event.get("id")})
+            actions.append(
+                {
+                    "step": "calendar_event",
+                    "status": "created",
+                    "event_id": event.get("id"),
+                }
+            )
     except Exception as e:
         actions.append({"step": "calendar_event", "status": "error", "error": str(e)})
 
@@ -58,11 +68,14 @@ def workflow_confirm_rdv(user, event_data: Dict[str, Any]) -> WorkflowResult:
         _send_confirmation_email(user, event_data)
         actions.append({"step": "confirmation_email", "status": "sent"})
     except Exception as e:
-        actions.append({"step": "confirmation_email", "status": "error", "error": str(e)})
+        actions.append(
+            {"step": "confirmation_email", "status": "error", "error": str(e)}
+        )
 
     # Step 3: Create reminder task
     try:
         from apps.workspace.models import Task
+
         Task.objects.create(
             user=user,
             title=f"Prepare for: {event_data.get('title', 'Appointment')}",
@@ -86,6 +99,7 @@ def _send_confirmation_email(user, event_data: Dict):
     """Send appointment confirmation email."""
     if user.email_imap_host and user.email_imap_password:
         from apps.users.services.email_client import EmailClient
+
         client = EmailClient(
             email_address=user.email,
             password=user.email_imap_password,
@@ -106,6 +120,7 @@ def _send_confirmation_email(user, event_data: Dict):
         )
     elif user.google_access_token:
         from apps.users.services import GmailClient
+
         gmail = GmailClient(user)
         gmail.send_message(
             to=event_data.get("attendee_email", user.email),
@@ -121,6 +136,7 @@ def _send_confirmation_email(user, event_data: Dict):
 
 # ─── Workflow: Financial Anomaly Alert ───────────────────────────────
 
+
 def workflow_financial_anomaly(user, anomaly_data: Dict[str, Any]) -> WorkflowResult:
     """
     Handle a financial anomaly:
@@ -133,6 +149,7 @@ def workflow_financial_anomaly(user, anomaly_data: Dict[str, Any]) -> WorkflowRe
     # Step 1: Create alert
     try:
         from apps.alerts.models import AgentAlert
+
         alert = AgentAlert.objects.create(
             user=user,
             title=f"Financial Anomaly: {anomaly_data.get('description', 'Suspicious activity')}",
@@ -153,6 +170,7 @@ def workflow_financial_anomaly(user, anomaly_data: Dict[str, Any]) -> WorkflowRe
     # Step 2: Create review task
     try:
         from apps.workspace.models import Task
+
         Task.objects.create(
             user=user,
             title=f"Review anomaly: {anomaly_data.get('transaction_name', 'Unknown')}",
@@ -169,7 +187,9 @@ def workflow_financial_anomaly(user, anomaly_data: Dict[str, Any]) -> WorkflowRe
         _send_anomaly_notification(user, anomaly_data)
         actions.append({"step": "notification_email", "status": "sent"})
     except Exception as e:
-        actions.append({"step": "notification_email", "status": "error", "error": str(e)})
+        actions.append(
+            {"step": "notification_email", "status": "error", "error": str(e)}
+        )
 
     return WorkflowResult(
         workflow="financial_anomaly",
@@ -182,6 +202,7 @@ def workflow_financial_anomaly(user, anomaly_data: Dict[str, Any]) -> WorkflowRe
 def _send_anomaly_notification(user, anomaly_data: Dict):
     if user.email_imap_host and user.email_imap_password:
         from apps.users.services.email_client import EmailClient
+
         client = EmailClient(
             email_address=user.email,
             password=user.email_imap_password,
@@ -205,6 +226,7 @@ def _send_anomaly_notification(user, anomaly_data: Dict):
 
 # ─── Workflow: Email Auto-Reply ──────────────────────────────────────
 
+
 def workflow_email_auto_reply(user, email_data: Dict[str, Any]) -> WorkflowResult:
     """
     Auto-reply to an email:
@@ -217,9 +239,16 @@ def workflow_email_auto_reply(user, email_data: Dict[str, Any]) -> WorkflowResul
     # Step 1: Analyze
     subject = email_data.get("subject", "")
     sender = email_data.get("from", "")
-    body = email_data.get("body", "")
+    body = email_data.get("body", "")  # noqa: F841
 
-    actions.append({"step": "analysis", "status": "completed", "sender": sender, "subject": subject})
+    actions.append(
+        {
+            "step": "analysis",
+            "status": "completed",
+            "sender": sender,
+            "subject": subject,
+        }
+    )
 
     # Step 2: Draft response
     draft_body = f"Thank you for your email regarding '{subject}'. We have received your message and will respond shortly."
@@ -229,6 +258,7 @@ def workflow_email_auto_reply(user, email_data: Dict[str, Any]) -> WorkflowResul
     try:
         if user.email_imap_host and user.email_imap_password:
             from apps.users.services.email_client import EmailClient
+
             client = EmailClient(
                 email_address=user.email,
                 password=user.email_imap_password,
@@ -252,6 +282,7 @@ def workflow_email_auto_reply(user, email_data: Dict[str, Any]) -> WorkflowResul
 
 # ─── Workflow: Kijiji Negotiation ────────────────────────────────────
 
+
 def workflow_kijiji_negotiation(user, listing_data: Dict[str, Any]) -> WorkflowResult:
     """
     Kijiji negotiation assistant:
@@ -264,16 +295,22 @@ def workflow_kijiji_negotiation(user, listing_data: Dict[str, Any]) -> WorkflowR
     # Step 1: Analyze listing
     price = listing_data.get("price", 0)
     title = listing_data.get("title", "")
-    actions.append({
-        "step": "listing_analysis",
-        "status": "completed",
-        "title": title,
-        "listed_price": price,
-    })
+    actions.append(
+        {
+            "step": "listing_analysis",
+            "status": "completed",
+            "title": title,
+            "listed_price": price,
+        }
+    )
 
     # Step 2: Suggest strategy
     suggested_offer = price * 0.8 if price > 50 else price * 0.9
-    strategy = f"Consider offering ${suggested_offer:.2f} (20% below asking)" if price > 50 else f"Consider offering ${suggested_offer:.2f} (10% below asking)"
+    strategy = (
+        f"Consider offering ${suggested_offer:.2f} (20% below asking)"
+        if price > 50
+        else f"Consider offering ${suggested_offer:.2f} (10% below asking)"
+    )
     actions.append({"step": "strategy", "suggestion": strategy})
 
     # Step 3: Draft message

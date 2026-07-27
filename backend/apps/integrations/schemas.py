@@ -2,8 +2,9 @@
 Request/response schemas for integration API.
 """
 
+from typing import List, Optional
+
 from pydantic import BaseModel
-from typing import Optional, List
 
 
 class OAuthCallbackSchema(BaseModel):
@@ -12,6 +13,7 @@ class OAuthCallbackSchema(BaseModel):
 
 
 # ─── Email (IMAP/SMTP) ──────────────────────────────────────────────
+
 
 class IMAPConfigSchema(BaseModel):
     provider: str = "custom"
@@ -33,6 +35,7 @@ class IMAPSendSchema(BaseModel):
 
 # ─── Gmail (Google API) ─────────────────────────────────────────────
 
+
 class EmailSendSchema(BaseModel):
     to: str
     subject: str
@@ -41,6 +44,7 @@ class EmailSendSchema(BaseModel):
 
 
 # ─── Calendar ────────────────────────────────────────────────────────
+
 
 class CalendarEventCreateSchema(BaseModel):
     summary: str
@@ -53,11 +57,13 @@ class CalendarEventCreateSchema(BaseModel):
 
 # ─── Plaid ───────────────────────────────────────────────────────────
 
+
 class PlaidExchangeSchema(BaseModel):
     public_token: str
 
 
 # ─── Canva ───────────────────────────────────────────────────────────
+
 
 class CanvaSearchSchema(BaseModel):
     keywords: List[str]
@@ -71,6 +77,7 @@ class CanvaCompetitorSchema(BaseModel):
 
 # ─── Kijiji ──────────────────────────────────────────────────────────
 
+
 class KijijiSearchSchema(BaseModel):
     query: str
     location: Optional[str] = None
@@ -80,6 +87,7 @@ class KijijiSearchSchema(BaseModel):
 
 
 # ─── LLM Configuration ──────────────────────────────────────────────
+
 
 class LLMConfigurationCreateSchema(BaseModel):
     provider: str

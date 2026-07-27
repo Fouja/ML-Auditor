@@ -4,17 +4,25 @@ Tasks, Calendar, News, Widgets, Triggers.
 """
 
 from django.utils import timezone
-from django.core.cache import cache
-from ninja import Router, Query
+from ninja import Query, Router
 from ninja.errors import HttpError
 
-from .models import Task, CalendarEvent, NewsFeed, NewsArticle, WorkspaceWidget, Trigger
+from .models import CalendarEvent, NewsArticle, NewsFeed, Task, Trigger, WorkspaceWidget
 from .schemas import (
-    TaskCreate, TaskUpdate, TaskResponse,
-    EventCreate, EventUpdate, EventResponse,
-    NewsFeedCreate, NewsFeedResponse, ArticleResponse,
-    WidgetCreate, WidgetUpdate, WidgetResponse,
-    TriggerCreate, TriggerResponse,
+    ArticleResponse,
+    EventCreate,
+    EventResponse,
+    EventUpdate,
+    NewsFeedCreate,
+    NewsFeedResponse,
+    TaskCreate,
+    TaskResponse,
+    TaskUpdate,
+    TriggerCreate,
+    TriggerResponse,
+    WidgetCreate,
+    WidgetResponse,
+    WidgetUpdate,
 )
 
 router = Router()
@@ -23,6 +31,7 @@ PAGE_SIZE = 20
 
 
 # ─── Tasks (Wall of Work) ───────────────────────────────────────────
+
 
 @router.get("/tasks", response=list[TaskResponse])
 def list_tasks(
@@ -98,6 +107,7 @@ def move_task(request, task_id: str, status: str, position: int = 0):
 
 
 # ─── Calendar Events ─────────────────────────────────────────────────
+
 
 @router.get("/events", response=list[EventResponse])
 def list_events(
@@ -176,6 +186,7 @@ def today_events(request):
 
 # ─── News Feeds ──────────────────────────────────────────────────────
 
+
 @router.get("/feeds", response=list[NewsFeedResponse])
 def list_feeds(request):
     """List news feeds for current user."""
@@ -252,6 +263,7 @@ def toggle_bookmark(request, article_id: str):
 
 # ─── Widgets (Bento Grid) ───────────────────────────────────────────
 
+
 @router.get("/widgets", response=list[WidgetResponse])
 def list_widgets(request):
     """List user's widgets."""
@@ -292,6 +304,7 @@ def delete_widget(request, widget_id: str):
 
 
 # ─── Triggers ────────────────────────────────────────────────────────
+
 
 @router.get("/triggers", response=list[TriggerResponse])
 def list_triggers(request):

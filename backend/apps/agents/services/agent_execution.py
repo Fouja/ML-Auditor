@@ -3,7 +3,6 @@ Agent execution job for running CrewAI agents.
 """
 
 import logging
-from typing import Any, Dict
 
 from celery import shared_task
 from django.utils import timezone
@@ -69,7 +68,7 @@ def classify_email_job(self, stream_id: str):
     from apps.data_streams.models import DataStream
 
     try:
-        stream = DataStream.objects.get(id=stream_id)
+        stream = DataStream.objects.get(id=stream_id)  # noqa: F841
 
         # TODO: Implement CrewAI email classification
         # This will use the Email Clustering Agent
@@ -99,7 +98,7 @@ def detect_anomalies_job(self, user_id: str):
     from apps.users.models import User
 
     try:
-        user = User.objects.get(id=user_id)
+        user = User.objects.get(id=user_id)  # noqa: F841
 
         # TODO: Implement Isolation Forest anomaly detection
         # This will use the Financial Audit Agent

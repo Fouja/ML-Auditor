@@ -8,8 +8,6 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from django.conf import settings
-
 logger = logging.getLogger(__name__)
 
 CANVA_API_BASE = "https://api.canva.com/rest/v1"
@@ -24,10 +22,12 @@ class CanvaClient:
     def __init__(self, access_token: str):
         self.access_token = access_token
         self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        })
+        self.session.headers.update(
+            {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+        )
 
     def _request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
         url = f"{CANVA_API_BASE}{path}"
@@ -179,13 +179,15 @@ class CanvaClient:
         all_templates = self.search_public_designs(keywords)
         trending = []
         for t in all_templates[:max_results]:
-            trending.append({
-                "id": t.get("id"),
-                "title": t.get("title", ""),
-                "thumbnail": t.get("thumbnail", {}).get("url", ""),
-                "created_at": t.get("created_at"),
-                "tags": t.get("tags", []),
-            })
+            trending.append(
+                {
+                    "id": t.get("id"),
+                    "title": t.get("title", ""),
+                    "thumbnail": t.get("thumbnail", {}).get("url", ""),
+                    "created_at": t.get("created_at"),
+                    "tags": t.get("tags", []),
+                }
+            )
         return {
             "keywords": keywords,
             "results_count": len(trending),

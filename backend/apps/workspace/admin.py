@@ -3,7 +3,8 @@ Admin configuration for Workspace models.
 """
 
 from django.contrib import admin
-from .models import Task, CalendarEvent, NewsFeed, NewsArticle, WorkspaceWidget, Trigger
+
+from .models import CalendarEvent, NewsArticle, NewsFeed, Task, Trigger, WorkspaceWidget
 
 
 @admin.register(Task)
@@ -28,7 +29,14 @@ class NewsFeedAdmin(admin.ModelAdmin):
 
 @admin.register(NewsArticle)
 class NewsArticleAdmin(admin.ModelAdmin):
-    list_display = ["title", "feed", "author", "published_at", "is_read", "is_bookmarked"]
+    list_display = [
+        "title",
+        "feed",
+        "author",
+        "published_at",
+        "is_read",
+        "is_bookmarked",
+    ]
     list_filter = ["is_read", "is_bookmarked"]
     search_fields = ["title", "content"]
 

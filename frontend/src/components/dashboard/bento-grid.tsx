@@ -109,15 +109,15 @@ function RecentActivityWidget() {
   return (
     <div className="p-4 space-y-2">
       <div className="text-sm">
-        <p className="text-muted-foreground">Task completed: "Review PR #42"</p>
+        <p className="text-muted-foreground">Task completed: &quot;Review PR #42&quot;</p>
         <p className="text-xs text-muted-foreground">2 hours ago</p>
       </div>
       <div className="text-sm">
-        <p className="text-muted-foreground">Event created: "Team standup"</p>
+        <p className="text-muted-foreground">Event created: &quot;Team standup&quot;</p>
         <p className="text-xs text-muted-foreground">3 hours ago</p>
       </div>
       <div className="text-sm">
-        <p className="text-muted-foreground">Article bookmarked: "AI trends 2024"</p>
+        <p className="text-muted-foreground">Article bookmarked: &quot;AI trends 2024&quot;</p>
         <p className="text-xs text-muted-foreground">5 hours ago</p>
       </div>
     </div>

@@ -4,6 +4,7 @@ Celery tasks for integration sync jobs.
 
 import logging
 from datetime import datetime, timedelta
+
 from celery import shared_task
 
 logger = logging.getLogger(__name__)

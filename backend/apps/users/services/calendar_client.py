@@ -92,9 +92,7 @@ class CalendarClient(BaseOAuthClient):
         )
         return response.get("items", [])
 
-    def get_event(
-        self, event_id: str, calendar_id: str = "primary"
-    ) -> Dict[str, Any]:
+    def get_event(self, event_id: str, calendar_id: str = "primary") -> Dict[str, Any]:
         """
         Get a specific event by ID.
 
@@ -180,9 +178,7 @@ class CalendarClient(BaseOAuthClient):
             data=updates,
         )
 
-    def delete_event(
-        self, event_id: str, calendar_id: str = "primary"
-    ) -> bool:
+    def delete_event(self, event_id: str, calendar_id: str = "primary") -> bool:
         """
         Delete an event.
 

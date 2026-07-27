@@ -69,7 +69,9 @@ class KijijiScraperService:
             if sort_by == "price":
                 params["sort"] = "priceAsc"
 
-            url = f"{KIJII_BASE_URL}/b-{query.replace(' ', '-')}/k0l0?{urlencode(params)}"
+            url = (
+                f"{KIJII_BASE_URL}/b-{query.replace(' ', '-')}/k0l0?{urlencode(params)}"
+            )
             logger.info(f"Scraping Kijiji: {url}")
 
             resp = self.session.get(url, timeout=15)
@@ -89,7 +91,9 @@ class KijijiScraperService:
         listings = []
 
         # Kijiji uses various class patterns for listing cards
-        cards = soup.select('[class*="sc-"] a[href*="/b-"]') or soup.select('a[href*="/b-"]')
+        cards = soup.select('[class*="sc-"] a[href*="/b-"]') or soup.select(
+            'a[href*="/b-"]'
+        )
 
         if not cards:
             # Fallback: try to find listing links
@@ -116,7 +120,11 @@ class KijijiScraperService:
         listing_id = ""
 
         # Get title
-        title_el = card.select_one('[class*="title"]') or card.select_one("h3") or card.select_one("h2")
+        title_el = (
+            card.select_one('[class*="title"]')
+            or card.select_one("h3")
+            or card.select_one("h2")
+        )
         if title_el:
             title = title_el.get_text(strip=True)
         elif card.get_text(strip=True):
@@ -136,7 +144,9 @@ class KijijiScraperService:
             listing_id = f"{id_match.group(1)}_{id_match.group(2)}"
 
         # Get price
-        price_el = card.select_one('[class*="price"]') or card.select_one('[data-testid*="price"]')
+        price_el = card.select_one('[class*="price"]') or card.select_one(
+            '[data-testid*="price"]'
+        )
         if price_el:
             price_text = price_el.get_text(strip=True)
             price_match = re.search(r"\$?([\d,]+(?:\.\d{2})?)", price_text)
@@ -144,7 +154,9 @@ class KijijiScraperService:
                 price = float(price_match.group(1).replace(",", ""))
 
         # Get location
-        location_el = card.select_one('[class*="location"]') or card.select_one('[class*="date"]')
+        location_el = card.select_one('[class*="location"]') or card.select_one(
+            '[class*="date"]'
+        )
         if location_el:
             location = location_el.get_text(strip=True)
 
@@ -168,7 +180,11 @@ class KijijiScraperService:
         """
         try:
             # Try to fetch the listing page
-            url = listing_id if listing_id.startswith("http") else f"{KIJII_BASE_URL}/b/{listing_id}"
+            url = (
+                listing_id
+                if listing_id.startswith("http")
+                else f"{KIJII_BASE_URL}/b/{listing_id}"
+            )
             resp = self.session.get(url, timeout=15)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
@@ -183,7 +199,9 @@ class KijijiScraperService:
                 if price_match:
                     price = float(price_match.group(1).replace(",", ""))
 
-            description_el = soup.select_one('[class*="description"]') or soup.select_one('[data-testid*="description"]')
+            description_el = soup.select_one(
+                '[class*="description"]'
+            ) or soup.select_one('[data-testid*="description"]')
             description = description_el.get_text(strip=True) if description_el else ""
 
             return {
@@ -231,7 +249,15 @@ class KijijiScraperService:
 
         if price is not None:
             # Basic heuristic: check for keywords suggesting good deals
-            deal_keywords = ["free", "cheap", "must go", "urgent", "moving", "liquidation", "sale"]
+            deal_keywords = [
+                "free",
+                "cheap",
+                "must go",
+                "urgent",
+                "moving",
+                "liquidation",
+                "sale",
+            ]
             if any(kw in title for kw in deal_keywords):
                 is_good_deal = True
                 confidence = 0.6
@@ -241,7 +267,9 @@ class KijijiScraperService:
             "is_good_deal": is_good_deal,
             "estimated_value": estimated_value,
             "confidence": confidence,
-            "recommendation": "Good deal detected" if is_good_deal else "No strong deal signals found",
+            "recommendation": (
+                "Good deal detected" if is_good_deal else "No strong deal signals found"
+            ),
         }
 
     def analyze_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -250,10 +278,23 @@ class KijijiScraperService:
         """
         content = message.get("content", "").lower()
 
-        lowball_keywords = ["lowest", "best price", "final offer", "$50", "$100", "can you do less"]
+        lowball_keywords = [
+            "lowest",
+            "best price",
+            "final offer",
+            "$50",
+            "$100",
+            "can you do less",
+        ]
         is_lowball = any(kw in content for kw in lowball_keywords)
 
-        spam_keywords = ["click here", "free money", "wire transfer", "western union", "send money"]
+        spam_keywords = [
+            "click here",
+            "free money",
+            "wire transfer",
+            "western union",
+            "send money",
+        ]
         is_spam = any(kw in content for kw in spam_keywords)
 
         return {

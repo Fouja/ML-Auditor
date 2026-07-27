@@ -11,6 +11,7 @@ from ninja import Schema
 
 class UserCreate(Schema):
     """Schema for creating a new user."""
+
     email: str
     username: str
     password: str
@@ -20,12 +21,14 @@ class UserCreate(Schema):
 
 class UserLogin(Schema):
     """Schema for user login."""
+
     email: str
     password: str
 
 
 class UserResponse(Schema):
     """Schema for user response."""
+
     id: UUID
     email: str
     username: str
@@ -47,6 +50,7 @@ class UserResponse(Schema):
 
 class UserUpdate(Schema):
     """Schema for updating user."""
+
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     avatar_url: Optional[str] = None
@@ -57,6 +61,7 @@ class UserUpdate(Schema):
 
 class TokenResponse(Schema):
     """Schema for JWT token response."""
+
     access: str
     refresh: str
     token_type: str = "bearer"
@@ -64,4 +69,5 @@ class TokenResponse(Schema):
 
 class TokenRefresh(Schema):
     """Schema for token refresh."""
+
     refresh: str
