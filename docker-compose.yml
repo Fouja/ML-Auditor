@@ -1,0 +1,261 @@
+# Docker Compose for ML-Auditor Development
+
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: mlauditor_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mlauditor_db
+      POSTGRES_USER: mlauditor
+      POSTGRES_PASSWORD: mlauditor
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlauditor -d mlauditor_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Caching, Celery, and Channels
+  redis:
+    image: redis:7-alpine
+    container_name: mlauditor_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Django Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: mlauditor_backend
+    restart: unless-stopped
+    environment:
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=django-insecure-dev-key-change-in-production
+      - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
+      - DJANGO_CACHE_URL=redis://redis:6379/0
+      - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
+      - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - DJANGO_CHANNELS_LAYERS=redis://redis:6379/3
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./logs/backend:/var/log/ml-auditor/backend
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  # Celery Worker
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: mlauditor_celery_worker
+    restart: unless-stopped
+    environment:
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=django-insecure-dev-key-change-in-production
+      - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
+      - DJANGO_CACHE_URL=redis://redis:6379/0
+      - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
+      - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config worker -l info -c 4
+
+  # Celery Beat (Scheduler)
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: mlauditor_celery_beat
+    restart: unless-stopped
+    environment:
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=django-insecure-dev-key-change-in-production
+      - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
+      - DJANGO_CACHE_URL=redis://redis:6379/0
+      - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
+      - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+  # ML Service (CrewAI + NIM)
+  ml_service:
+    build:
+      context: ./ml-service
+      dockerfile: ../docker/Dockerfile.ml
+    container_name: mlauditor_ml_service
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://mlauditor:mlauditor@db:5432/mlauditor_db
+      - NIM_API_KEY=${NIM_API_KEY}
+      - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - NIM_MODEL=${NIM_MODEL:-meta/llama-3.3-70b-instruct}
+      - NIM_EMBEDDING_MODEL=${NIM_EMBEDDING_MODEL:-nvidia/nv-embedqa-e5-v5}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ml-service:/app
+      - ./logs/ml-service:/var/log/ml-auditor/ml-service
+    depends_on:
+      db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: mlauditor_frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - ./logs/frontend:/var/log/ml-auditor/frontend
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+
+  # ===========================================
+  # ELK Stack — Logging & Monitoring
+  # ===========================================
+
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: mlauditor_elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - ELASTIC_PASSWORD=changeme
+      - cluster.name=ml-auditor-logs
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.4
+    container_name: mlauditor_logstash
+    restart: unless-stopped
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    volumes:
+      - ./docker/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logs:/var/log/ml-auditor:ro
+      - logstash_data:/usr/share/logstash/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.4
+    container_name: mlauditor_kibana
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:5601/api/status | grep -q '\"overall\":{\"level\":\"available\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  # Filebeat — collects logs from all services
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.13.4
+    container_name: mlauditor_filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./docker/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/var/log/ml-auditor:ro
+      - filebeat_data:/usr/share/filebeat/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      logstash:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_files:
+  media_files:
+  elasticsearch_data:
+  logstash_data:
+  filebeat_data:

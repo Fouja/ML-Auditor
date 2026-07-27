@@ -1,0 +1,15 @@
+{
+  "name": "ml-auditor",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"yarn workspace frontend dev\" \"docker compose up\"",
+    "lint": "yarn workspace frontend lint",
+    "test": "yarn workspace frontend test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlauditor-migrate
+  namespace: mlauditor
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      containers:
+        - name: migrate
+          image: mlauditor/backend:latest
+          command: ["python", "manage.py", "migrate", "--noinput"]
+          envFrom:
+            - secretRef:
+                name: mlauditor-secrets
+            - configMapRef:
+                name: mlauditor-config
+      restartPolicy: Never

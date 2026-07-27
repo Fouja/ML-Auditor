@@ -1,0 +1,246 @@
+# Production Docker Compose - ML-Auditor
+# Usage: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+version: '3.9'
+
+services:
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: mlauditor_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deployment/nginx/ssl:/etc/nginx/ssl:ro
+      - static_files:/app/staticfiles:ro
+      - media_files:/app/media:ro
+      - frontend_build:/app/frontend:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - mlauditor_net
+
+  # PostgreSQL Database
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: mlauditor_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mlauditor_db}
+      POSTGRES_USER: ${POSTGRES_USER:-mlauditor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mlauditor} -d ${POSTGRES_DB:-mlauditor_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mlauditor_net
+
+  # Redis for Caching, Celery, and Channels
+  redis:
+    image: redis:7-alpine
+    container_name: mlauditor_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mlauditor_net
+
+  # Django Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: mlauditor_backend
+    restart: unless-stopped
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - DJANGO_DATABASE_URL=postgres://${POSTGRES_USER:-mlauditor}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mlauditor_db}
+      - DJANGO_CACHE_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DJANGO_CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - DJANGO_CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
+      - DJANGO_CHANNELS_LAYERS=redis://:${REDIS_PASSWORD}@redis:6379/3
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+      - NIM_API_KEY=${NIM_API_KEY}
+      - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - NIM_MODEL=${NIM_MODEL:-meta/llama-3.3-70b-instruct}
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SECRET=${PLAID_SECRET}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - CANVA_CLIENT_ID=${CANVA_CLIENT_ID}
+      - CANVA_CLIENT_SECRET=${CANVA_CLIENT_SECRET}
+      - SENTRY_DSN=${SENTRY_DSN}
+    volumes:
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn config.wsgi:application
+             --bind 0.0.0.0:8000
+             --workers ${GUNICORN_WORKERS:-4}
+             --worker-class uvicorn.workers.UvicornWorker
+             --access-logfile -
+             --error-logfile -"
+    networks:
+      - mlauditor_net
+
+  # Celery Worker
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: mlauditor_celery_worker
+    restart: unless-stopped
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_DATABASE_URL=postgres://${POSTGRES_USER:-mlauditor}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mlauditor_db}
+      - DJANGO_CACHE_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DJANGO_CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - DJANGO_CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - NIM_API_KEY=${NIM_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config worker -l info -c ${CELERY_WORKERS:-4} -Q default,email,calendar,plaid,kijiji,canva
+    networks:
+      - mlauditor_net
+
+  # Celery Beat (Scheduler)
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: mlauditor_celery_beat
+    restart: unless-stopped
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_DATABASE_URL=postgres://${POSTGRES_USER:-mlauditor}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mlauditor_db}
+      - DJANGO_CACHE_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DJANGO_CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - DJANGO_CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    networks:
+      - mlauditor_net
+
+  # ML Service (CrewAI + NIM)
+  ml_service:
+    build:
+      context: ./ml-service
+      dockerfile: ../docker/Dockerfile.ml
+    container_name: mlauditor_ml_service
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-mlauditor}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mlauditor_db}
+      - NIM_API_KEY=${NIM_API_KEY}
+      - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - NIM_MODEL=${NIM_MODEL:-meta/llama-3.3-70b-instruct}
+      - NIM_EMBEDDING_MODEL=${NIM_EMBEDDING_MODEL:-nvidia/nv-embedqa-e5-v5}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --workers ${ML_WORKERS:-2}
+    networks:
+      - mlauditor_net
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost}
+        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost}
+    container_name: mlauditor_frontend
+    restart: unless-stopped
+    networks:
+      - mlauditor_net
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mlauditor_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./deployment/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - mlauditor_net
+
+  # Grafana Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mlauditor_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployment/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployment/grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - mlauditor_net
+
+  # Loki Log Aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: mlauditor_loki
+    restart: unless-stopped
+    volumes:
+      - loki_data:/loki
+      - ./deployment/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+    ports:
+      - "3100:3100"
+    networks:
+      - mlauditor_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_files:
+  media_files:
+  frontend_build:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+
+networks:
+  mlauditor_net:
+    driver: bridge
