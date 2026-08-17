@@ -99,6 +99,7 @@ class PlaidClient(BaseOAuthClient):
         end_date: Optional[datetime] = None,
         access_token: Optional[str] = None,
         count: int = 100,
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """
         Get transactions for date range.
@@ -107,7 +108,8 @@ class PlaidClient(BaseOAuthClient):
             start_date: Start date
             end_date: End date
             access_token: Plaid access token
-            count: Number of transactions
+            count: Number of transactions per page
+            offset: Pagination offset
 
         Returns:
             List of transactions
@@ -126,7 +128,7 @@ class PlaidClient(BaseOAuthClient):
                 "access_token": token,
                 "start_date": start_date.strftime("%Y-%m-%d"),
                 "end_date": end_date.strftime("%Y-%m-%d"),
-                "options": {"count": count},
+                "options": {"count": count, "offset": offset},
             },
         )
         transactions = response.get("transactions", [])
@@ -220,3 +222,23 @@ class PlaidClient(BaseOAuthClient):
             {"count": count, "country_codes": ["CA", "US"]},
         )
         return response.get("institutions", [])
+
+    def get_institution_by_id(self, institution_id: str) -> Dict[str, Any]:
+        """
+        Get institution details (name, url, logo, address) by ID.
+
+        Args:
+            institution_id: Plaid institution ID
+
+        Returns:
+            Institution data
+        """
+        return self._make_request(
+            "POST",
+            "/institutions/get_by_id",
+            {
+                "institution_id": institution_id,
+                "country_codes": ["CA", "US"],
+                "options": {"include_optional_metadata": True},
+            },
+        )

@@ -4,7 +4,16 @@ Admin configuration for Workspace models.
 
 from django.contrib import admin
 
-from .models import CalendarEvent, NewsArticle, NewsFeed, Task, Trigger, WorkspaceWidget
+from .models import (
+    CalendarEvent,
+    GeneratedDocument,
+    NewsArticle,
+    NewsFeed,
+    Note,
+    Task,
+    Trigger,
+    WorkspaceWidget,
+)
 
 
 @admin.register(Task)
@@ -47,7 +56,21 @@ class WorkspaceWidgetAdmin(admin.ModelAdmin):
     list_filter = ["widget_type", "is_visible"]
 
 
+@admin.register(Note)
+class NoteAdmin(admin.ModelAdmin):
+    list_display = ["title", "format", "is_pinned", "updated_at", "created_at"]
+    list_filter = ["format", "is_pinned"]
+    search_fields = ["title", "content"]
+
+
 @admin.register(Trigger)
 class TriggerAdmin(admin.ModelAdmin):
     list_display = ["name", "trigger_type", "trigger_time", "is_active", "last_fired"]
     list_filter = ["trigger_type", "is_active"]
+
+
+@admin.register(GeneratedDocument)
+class GeneratedDocumentAdmin(admin.ModelAdmin):
+    list_display = ["title", "doc_format", "file_format", "style", "updated_at"]
+    list_filter = ["doc_format", "file_format"]
+    search_fields = ["title", "content"]

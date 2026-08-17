@@ -5,7 +5,6 @@ User API endpoints for ML-Auditor.
 from typing import List
 
 from django.contrib.auth import authenticate, get_user_model
-from django.contrib.auth.hashers import make_password
 from ninja import Router
 from ninja.errors import HttpError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -29,12 +28,12 @@ def register(request, payload: UserCreate):
     if User.objects.filter(email=payload.email).exists():
         raise HttpError(400, "Email already exists")
 
-    user = User.objects.create(
+    user = User.objects.create_user(
         email=payload.email,
         username=payload.username,
-        password=make_password(payload.password),
-        first_name=payload.first_name,
-        last_name=payload.last_name,
+        password=payload.password,
+        first_name=payload.first_name or "",
+        last_name=payload.last_name or "",
     )
 
     tokens = RefreshToken.for_user(user)

@@ -7,6 +7,7 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 90000,
 });
 
 // ---- Frontend Logger ----
@@ -66,7 +67,7 @@ class FrontendLogger {
     const entries = this.buffer.splice(0, this.BUFFER_SIZE);
 
     try {
-      await fetch(`${API_URL}/api/logs`, {
+      await fetch(`${API_URL}/api/logs/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ logs: entries }),

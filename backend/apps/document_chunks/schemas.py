@@ -48,3 +48,37 @@ class DocumentChunkListResponse(Schema):
     total: int
     page: int
     pages: int
+
+
+class RagQuery(Schema):
+    """Schema for RAG retrieval query."""
+
+    query: str
+    sources: Optional[List[str]] = None
+    categories: Optional[List[str]] = None
+    limit: int = 10
+    min_score: float = 0.30
+    answer: bool = False
+
+
+class RagResult(Schema):
+    """Schema for a single RAG retrieval hit."""
+
+    chunk_id: str
+    content: str
+    score: float
+    source_type: str
+    category: str
+    metadata: Optional[Dict[str, Any]] = None
+    module_context: Optional[Dict[str, Any]] = None
+
+
+class RagResponse(Schema):
+    """Schema for RAG query response."""
+
+    query: str
+    results: List[RagResult]
+    answer: Optional[str] = None
+    backend: str
+    source_distribution: Dict[str, int]
+    latency_ms: float

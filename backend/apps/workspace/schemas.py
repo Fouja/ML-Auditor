@@ -117,6 +117,7 @@ class ArticleResponse(Schema):
     url: str
     content: str
     summary: str
+    image_url: str = ""
     author: str
     published_at: Optional[datetime]
     is_read: bool
@@ -164,6 +165,68 @@ class WidgetResponse(Schema):
     @staticmethod
     def resolve_id(obj):
         return obj.id
+
+
+class NoteCreate(Schema):
+    title: str
+    content: str = ""
+    format: str = "note"
+    tags: List[str] = []
+    is_pinned: bool = False
+
+
+class NoteUpdate(Schema):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    format: Optional[str] = None
+    tags: Optional[List[str]] = None
+    is_pinned: Optional[bool] = None
+
+
+class NoteResponse(Schema):
+    id: UUID
+    title: str
+    content: str
+    format: str
+    tags: List[str]
+    is_pinned: bool
+    created_at: datetime
+    updated_at: datetime
+
+    @staticmethod
+    def resolve_id(obj):
+        return obj.id
+
+
+class NoteGenerateRequest(Schema):
+    target_format: str = "presentation"
+    style: str = "professional"
+    max_length: Optional[int] = None
+
+
+class GeneratedDocumentUpdate(Schema):
+    title: Optional[str] = None
+    style: Optional[str] = None
+
+
+class GeneratedDocumentResponse(Schema):
+    id: UUID
+    note_id: UUID
+    title: str
+    content: str
+    doc_format: str
+    file_format: str
+    style: str
+    created_at: datetime
+    updated_at: datetime
+
+    @staticmethod
+    def resolve_id(obj):
+        return obj.id
+
+    @staticmethod
+    def resolve_note_id(obj):
+        return obj.note_id
 
 
 class TriggerCreate(Schema):

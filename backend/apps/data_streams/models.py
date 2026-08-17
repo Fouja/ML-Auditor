@@ -16,6 +16,8 @@ class DataStream(models.Model):
         ("plaid", "Plaid"),
         ("google_calendar", "Google Calendar"),
         ("manual", "Manual Entry"),
+        ("jira", "Jira"),
+        ("email", "Email (IMAP)"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

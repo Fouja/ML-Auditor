@@ -15,6 +15,7 @@ spec:
     - hosts:
         - mlauditor.com
         - www.mlauditor.com
+        - kibana.mlauditor.com
       secretName: mlauditor-tls
   rules:
     - host: mlauditor.com
@@ -34,13 +35,6 @@ spec:
                 name: mlauditor-backend
                 port:
                   number: 8000
-          - path: /ml/
-            pathType: Prefix
-            backend:
-              service:
-                name: mlauditor-ml-service
-                port:
-                  number: 8001
           - path: /
             pathType: Prefix
             backend:
@@ -48,3 +42,13 @@ spec:
                 name: mlauditor-frontend
                 port:
                   number: 3000
+    - host: kibana.mlauditor.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kibana
+                port:
+                  number: 5601

@@ -22,10 +22,12 @@ wheels/
 
 # Virtual Environment
 venv/
+.venv/
 ENV/
 env/
 .env
 .env.local
+.env.prod
 
 # Django
 *.log
@@ -68,3 +70,14 @@ docker-compose.override.yml
 *.key
 *.cert
 secrets/
+
+# Local test database
+backend/test_db.sqlite3
+
+# Python tool caches (local user-install layout)
+backend/.local/
+backend/.cache/
+backend/.pytest_cache/
+
+# TypeScript incremental build info
+*.tsbuildinfo

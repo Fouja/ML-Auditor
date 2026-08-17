@@ -34,6 +34,27 @@ class TestUsersAPI:
         )
         assert resp.status_code in (200, 201)
 
+    def test_register_without_names(self):
+        client = APIClient()
+        resp = client.post(
+            "/api/users/register",
+            {
+                "email": "nonames@test.com",
+                "username": "nonames",
+                "password": "pass12345",
+            },
+            format="json",
+        )
+        assert resp.status_code in (200, 201)
+        assert "access" in resp.json()
+
+        login_resp = client.post(
+            "/api/users/login",
+            {"email": "nonames@test.com", "password": "pass12345"},
+            format="json",
+        )
+        assert login_resp.status_code == 200
+
     def test_login(self):
         from django.contrib.auth import get_user_model
 

@@ -37,7 +37,8 @@ docker compose exec backend python manage.py createsuperuser
 
 ```bash
 cp .env.prod.example .env.prod
-# Edit .env.prod with all secrets
+# Edit .env.prod with all secrets (or generate them):
+bash scripts/generate_secrets.sh .env.prod
 
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
@@ -71,6 +72,8 @@ kubectl create secret generic mlauditor-secrets \
   --from-literal=REDIS_PASSWORD=$(openssl rand -base64 32) \
   --from-literal=DJANGO_SECRET_KEY=$(openssl rand -base64 50) \
   --from-literal=JWT_SECRET_KEY=$(openssl rand -base64 50) \
+  --from-literal=SECRET_ENCRYPTION_KEY=$(openssl rand -base64 50) \
+  --from-literal=JC_API_TOKEN=$(openssl rand -base64 50) \
   --from-literal=NIM_API_KEY=nvapi-XXXX
 
 # 3. Deploy infrastructure
@@ -180,7 +183,7 @@ kubectl rollout undo deployment/mlauditor-backend -n mlauditor
 | Service | Endpoint | Expected |
 |---------|----------|----------|
 | Backend | `GET /health` | 200 OK |
-| ML Service | `GET /health` | 200 OK |
+| MCP Server | `python -m apps.agents.mcp_server --http` | SSE connect |
 | Frontend | `GET /` | 200 OK |
 | PostgreSQL | `pg_isready` | ready |
 | Redis | `redis-cli ping` | PONG |

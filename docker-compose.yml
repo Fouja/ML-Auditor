@@ -48,20 +48,54 @@ services:
     restart: unless-stopped
     environment:
       - DJANGO_DEBUG=True
-      - DJANGO_SECRET_KEY=django-insecure-dev-key-change-in-production
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
       - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
       - DJANGO_CACHE_URL=redis://redis:6379/0
       - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
       - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
       - DJANGO_CHANNELS_LAYERS=redis://redis:6379/3
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - LOG_DIR=/var/log/ml-auditor/backend
+      - FRONTEND_LOG_DIR=/var/log/ml-auditor/frontend
+      - NIM_API_KEY=${NIM_API_KEY:-}
+      - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - NIM_MODEL=${NIM_MODEL:-meta/llama-3.1-8b-instruct}
+      - SECRET_ENCRYPTION_KEY=${SECRET_ENCRYPTION_KEY:-}
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
+      - PLAID_SECRET=${PLAID_SECRET:-}
+      - PLAID_ENV=${PLAID_ENV:-sandbox}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
+      - ELASTIC_APM_SERVICE_NAME=ml-auditor-backend
+      - ELASTIC_APM_SERVER_URL=http://apm-server:8200
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
+      - WEB_TOOLS_URL=http://web-tools:8090
+      - JC_URL=http://jobchameleon:8787
+      - JC_MCP_URL=http://jobchameleon:8788/mcp
+      - JC_API_TOKEN=${JC_API_TOKEN:-}
+      - JC_PUBLIC_URL=${JC_PUBLIC_URL:-http://localhost:8787}
+      - JCAPP_PUBLIC_URL=${JCAPP_PUBLIC_URL:-http://localhost:8088}
+      - JCAPP_WEB_HOST_PORT=${JCAPP_WEB_HOST_PORT:-8088}
+      - NIM_API_KEY=${NIM_API_KEY:-}
+      - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - NIM_MODEL=${NIM_MODEL:-meta/llama-3.1-8b-instruct}
     ports:
       - "8000:8000"
+    group_add:
+      # Host docker group GID — grants the uid-1000 app user access to the
+      # mounted docker.sock so the container-control button works.
+      - ${DOCKER_GROUP_ID:-116}
     volumes:
       - ./backend:/app
       - ./logs/backend:/var/log/ml-auditor/backend
+      - ./logs/frontend:/var/log/ml-auditor/frontend
       - static_files:/app/staticfiles
       - media_files:/app/media
+      # Allow the "Run JobCamelonapp container" button to talk to the host
+      # Docker daemon and build from the JobCamelonapp source tree.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./JobCamelonapp:/repo/JobCamelonapp:ro
     depends_on:
       db:
         condition: service_healthy
@@ -82,19 +116,38 @@ services:
     restart: unless-stopped
     environment:
       - DJANGO_DEBUG=True
-      - DJANGO_SECRET_KEY=django-insecure-dev-key-change-in-production
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
       - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
       - DJANGO_CACHE_URL=redis://redis:6379/0
       - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
       - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - LOG_DIR=/var/log/ml-auditor/backend
+      - FRONTEND_LOG_DIR=/var/log/ml-auditor/frontend
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
+      - PLAID_SECRET=${PLAID_SECRET:-}
+      - PLAID_ENV=${PLAID_ENV:-sandbox}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
+      - ELASTIC_APM_SERVICE_NAME=ml-auditor-backend
+      - ELASTIC_APM_SERVER_URL=http://apm-server:8200
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
     volumes:
       - ./backend:/app
+      - ./logs/backend:/var/log/ml-auditor/backend
+      - ./logs/frontend:/var/log/ml-auditor/frontend
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A config worker -l info -c 4
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import sys,os; ex=0 if any('celery' in open(f'/proc/{p}/cmdline','rb').read().decode('utf-8','ignore') for p in os.listdir('/proc') if p.isdigit() and os.access(f'/proc/{p}/cmdline',os.R_OK)) else 1; sys.exit(ex)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # Celery Beat (Scheduler)
   celery_beat:
@@ -105,45 +158,38 @@ services:
     restart: unless-stopped
     environment:
       - DJANGO_DEBUG=True
-      - DJANGO_SECRET_KEY=django-insecure-dev-key-change-in-production
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
       - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
       - DJANGO_CACHE_URL=redis://redis:6379/0
       - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
       - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - LOG_DIR=/var/log/ml-auditor/backend
+      - FRONTEND_LOG_DIR=/var/log/ml-auditor/frontend
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
+      - PLAID_SECRET=${PLAID_SECRET:-}
+      - PLAID_ENV=${PLAID_ENV:-sandbox}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
+      - ELASTIC_APM_SERVICE_NAME=ml-auditor-celery-beat
+      - ELASTIC_APM_SERVER_URL=http://apm-server:8200
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
     volumes:
       - ./backend:/app
+      - ./logs/backend:/var/log/ml-auditor/backend
+      - ./logs/frontend:/var/log/ml-auditor/frontend
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-
-  # ML Service (CrewAI + NIM)
-  ml_service:
-    build:
-      context: ./ml-service
-      dockerfile: ../docker/Dockerfile.ml
-    container_name: mlauditor_ml_service
-    restart: unless-stopped
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://mlauditor:mlauditor@db:5432/mlauditor_db
-      - NIM_API_KEY=${NIM_API_KEY}
-      - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
-      - NIM_MODEL=${NIM_MODEL:-meta/llama-3.3-70b-instruct}
-      - NIM_EMBEDDING_MODEL=${NIM_EMBEDDING_MODEL:-nvidia/nv-embedqa-e5-v5}
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./ml-service:/app
-      - ./logs/ml-service:/var/log/ml-auditor/ml-service
-    depends_on:
-      db:
-        condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
-    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import sys,os; ex=0 if any('celery' in open(f'/proc/{p}/cmdline','rb').read().decode('utf-8','ignore') for p in os.listdir('/proc') if p.isdigit() and os.access(f'/proc/{p}/cmdline',os.R_OK)) else 1; sys.exit(ex)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # Frontend (Next.js)
   frontend:
@@ -165,6 +211,118 @@ services:
     depends_on:
       - backend
 
+  # Web Tools Microservice (Agent-Reach: web read/search/RSS)
+  web-tools:
+    build:
+      context: ./web-tools
+      dockerfile: Dockerfile
+    container_name: mlauditor_web_tools
+    restart: unless-stopped
+    environment:
+      - EXA_API_KEY=${EXA_API_KEY:-}
+    ports:
+      - "8090:8090"
+
+  # MCP Server — exposes ML-Auditor tools (tasks, notes, calendar, web search,
+  # news, Agent-Reach status) over the Model Context Protocol (StreamableHTTP).
+  mcp-server:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: mlauditor_mcp_server
+    restart: unless-stopped
+    environment:
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
+      - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
+      - DJANGO_CACHE_URL=redis://redis:6379/0
+      - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
+      - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - DJANGO_CHANNELS_LAYERS=redis://redis:6379/3
+      - WEB_TOOLS_URL=http://web-tools:8090
+      - ML_AUDITOR_MCP_USER_EMAIL=${ML_AUDITOR_MCP_USER_EMAIL:-test@test.com}
+      - JC_URL=http://jobchameleon:8787
+      - JC_MCP_URL=http://jobchameleon:8788/mcp
+      - JC_API_TOKEN=${JC_API_TOKEN:-}
+      - JC_PUBLIC_URL=${JC_PUBLIC_URL:-http://localhost:8787}
+      - LOG_DIR=/var/log/ml-auditor/backend
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
+      - PLAID_SECRET=${PLAID_SECRET:-}
+      - PLAID_ENV=${PLAID_ENV:-sandbox}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
+      - ELASTIC_APM_SERVICE_NAME=ml-auditor-mcp-server
+      - ELASTIC_APM_SERVER_URL=http://apm-server:8200
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
+    ports:
+      - "8100:8100"
+    volumes:
+      - ./backend:/app
+      - ./logs/backend:/var/log/ml-auditor/backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web-tools:
+        condition: service_started
+    command: python -m apps.agents.mcp_server --http --host 0.0.0.0 --port 8100
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -X POST http://localhost:8100/mcp -H 'Content-Type: application/json' -H 'Accept: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"health\",\"version\":\"0\"}}}' | grep -q jsonrpc"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  # JobChameleon — local-first AI job intelligence workbench (FastAPI gateway +
+  # MCP over HTTP). Uses the same NVIDIA NIM key/model as ML-Auditor.
+  jobchameleon:
+    build:
+      context: ./jobchameleon
+      dockerfile: ../docker/Dockerfile.jobchameleon
+    container_name: mlauditor_jobchameleon
+    restart: unless-stopped
+    environment:
+      - JC_API_TOKEN=${JC_API_TOKEN:-}
+      - JC_HOST=0.0.0.0
+      - JC_ALLOWED_HOSTS=jobchameleon,localhost,127.0.0.1
+      - JCAPP_MCP_URL=http://jobcamelonapp:8790/mcp
+      - NVIDIA_API_KEY=${NIM_API_KEY:-}
+      - NVIDIA_MODEL=${NIM_MODEL:-meta/llama-3.1-8b-instruct}
+      - XDG_DATA_HOME=/app/data
+    ports:
+      - "8787:8787"
+      - "8788:8788"
+
+  # JobCamelonapp — the full JobChameleon workbench (desktop repo) run as a
+  # container. Started on demand from the JobChameleon integration card
+  # ("Run JobCamelonapp container") which creates a fresh container on the
+  # compose network; this definition keeps it buildable/reproducible and wires
+  # the MCP link back to the jobchameleon microservice.
+  jobcamelonapp:
+    build:
+      context: ./JobCamelonapp
+      dockerfile: Dockerfile
+    image: mlauditor/jobcamelonapp:latest
+    profiles: ["jobcamelonapp"]
+    container_name: mlauditor_jobcamelonapp
+    restart: unless-stopped
+    environment:
+      - JC_TOKEN=${JC_API_TOKEN:-}
+      - JC_HOST=0.0.0.0
+      - JC_ALLOWED_HOSTS=jobcamelonapp,localhost,127.0.0.1
+      - JC_MCP_URL=http://jobchameleon:8788/mcp
+      - JC_MCP_PORT=8790
+      - JC_WEB_PORT=1403
+      - NVIDIA_API_KEY=${NIM_API_KEY:-}
+      - NVIDIA_MODEL=${NIM_MODEL:-meta/llama-3.1-8b-instruct}
+      - XDG_DATA_HOME=/app/data
+    ports:
+      - "8089:8088"
+      - "1403:1403"
+      - "8790:8790"
+
   # ===========================================
   # ELK Stack — Logging & Monitoring
   # ===========================================
@@ -178,6 +336,9 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - xpack.security.http.ssl.enabled=false
+      # apm-data ES plugin: installs APM index/component templates + ingest
+      # pipelines so APM Server can run without Fleet or stack security.
+      - xpack.apm_data.enabled=true
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
       - ELASTIC_PASSWORD=changeme
       - cluster.name=ml-auditor-logs
@@ -206,6 +367,7 @@ services:
       - LS_JAVA_OPTS=-Xms256m -Xmx256m
     ports:
       - "5044:5044"
+      - "5000:5000"
       - "9600:9600"
     volumes:
       - ./docker/logstash/pipeline:/usr/share/logstash/pipeline:ro
@@ -235,12 +397,41 @@ services:
       retries: 10
       start_period: 40s
 
+  # APM Server — receives traces from instrumented services
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.13.4
+    container_name: mlauditor_apm_server
+    restart: unless-stopped
+    command: >
+      apm-server -e -strict.perms=false
+      -E apm-server.host=0.0.0.0:8200
+      -E apm-server.data_streams.wait_for_integration=false
+      -E output.elasticsearch.hosts=["http://elasticsearch:9200"]
+    ports:
+      - "8200:8200"
+    environment:
+      - output.elasticsearch.hosts=["http://elasticsearch:9200"]
+      - xpack.security.enabled=false
+      - apm-server.host=0.0.0.0:8200
+      - apm-server.data_streams.wait_for_integration=false
+      - logging.to_files=false
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8200' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
   # Filebeat — collects logs from all services
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.13.4
     container_name: mlauditor_filebeat
     restart: unless-stopped
     user: root
+    command: filebeat -e -strict.perms=false
     volumes:
       - ./docker/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - ./logs:/var/log/ml-auditor:ro
@@ -251,6 +442,47 @@ services:
       logstash:
         condition: service_started
 
+  # Metricbeat — collects system & container metrics
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:8.13.4
+    container_name: mlauditor_metricbeat
+    restart: unless-stopped
+    user: root
+    command: metricbeat -e -strict.perms=false
+    volumes:
+      - ./docker/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+      - metricbeat_data:/usr/share/metricbeat/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/hostfs/proc:ro
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+      - /:/hostfs:ro
+    environment:
+      - HOST_ROOT=/hostfs
+      - DOCKER_API_VERSION=1.44
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # One-off Metricbeat setup: loads built-in Kibana dashboards and ML jobs.
+  # Run manually after Kibana is healthy: docker compose up metricbeat-setup
+  metricbeat-setup:
+    image: docker.elastic.co/beats/metricbeat:8.13.4
+    container_name: mlauditor_metricbeat_setup
+    restart: "no"
+    user: root
+    command: >
+      sh -c "metricbeat setup -e -E output.elasticsearch.hosts=[\"http://elasticsearch:9200\"]"
+    volumes:
+      - ./docker/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - setup.kibana.host=http://kibana:5601
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      kibana:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
@@ -259,3 +491,4 @@ volumes:
   elasticsearch_data:
   logstash_data:
   filebeat_data:
+  metricbeat_data:

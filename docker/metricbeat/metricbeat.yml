@@ -1,0 +1,55 @@
+metricbeat.modules:
+- module: system
+  metricsets:
+    - cpu
+    - load
+    - memory
+    - network
+    - process
+    - process_summary
+    - filesystem
+    - socket_summary
+    - uptime
+  period: 10s
+  processes: ['.*']
+  process.include_top_n:
+    by_cpu: 10
+    by_memory: 10
+  process.cmdline.cache.enabled: true
+  process.cgroups.enabled: true
+
+- module: docker
+  metricsets:
+    - container
+    - cpu
+    - diskio
+    - event
+    - healthcheck
+    - info
+    - image
+    - memory
+    - network
+  hosts: ["unix:///var/run/docker.sock"]
+  period: 10s
+  labels.dedot: true
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+
+setup.kibana:
+  host: "http://kibana:5601"
+
+processors:
+  - add_host_metadata:
+      netinfo.enabled: true
+  - add_cloud_metadata: ~
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+  - add_fields:
+      target: service
+      fields:
+        name: "ml-auditor"
+        type: "platform"
+
+logging.level: info
+logging.to_files: false

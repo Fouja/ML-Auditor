@@ -1,0 +1,176 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metricbeat-config
+  namespace: mlauditor
+  labels:
+    app: metricbeat
+data:
+  metricbeat.yml: |
+    metricbeat.config.modules:
+      path: /usr/share/metricbeat/modules.d/*.yml
+      reload.enabled: false
+
+    metricbeat.modules:
+      - module: system
+        metricsets:
+          - cpu
+          - load
+          - memory
+          - network
+          - process
+          - filesystem
+        period: 10s
+        processes: [".*"]
+        cpu.metrics: [percentages]
+        core.metrics: [percentages]
+
+      - module: kubernetes
+        metricsets:
+          - node
+          - system
+          - pod
+          - container
+          - event
+        period: 10s
+        host: ${NODE_NAME}
+        hosts: ["https://${NODE_NAME}:10250"]
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        ssl.certificate_authorities:
+          - /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        ssl.verification_mode: none
+        add_metadata: true
+
+    processors:
+      - add_cloud_metadata: ~
+      - add_host_metadata: ~
+        host.name: ${NODE_NAME}
+    output.logstash:
+      hosts: ["${LOGSTASH_HOST:logstash}:5044"]
+
+    logging.level: info
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: metricbeat
+  namespace: mlauditor
+  labels:
+    app: metricbeat
+spec:
+  selector:
+    matchLabels:
+      app: metricbeat
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: metricbeat
+    spec:
+      serviceAccountName: metricbeat
+      terminationGracePeriodSeconds: 30
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: metricbeat
+          image: docker.elastic.co/beats/metricbeat:8.13.4
+          args: ["-e", "-c", "/etc/metricbeat.yml", "--system.hostfs=/hostfs"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: LOGSTASH_HOST
+              value: logstash
+          securityContext:
+            runAsUser: 0
+          resources:
+            requests:
+              cpu: 100m
+              memory: 100Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/metricbeat.yml
+              readOnly: true
+              subPath: metricbeat.yml
+            - name: modules
+              mountPath: /usr/share/metricbeat/modules.d
+              readOnly: true
+            - name: proc
+              mountPath: /hostfs/proc
+              readOnly: true
+            - name: sys
+              mountPath: /hostfs/sys
+              readOnly: true
+            - name: root
+              mountPath: /hostfs
+              readOnly: true
+            - name: data
+              mountPath: /usr/share/metricbeat/data
+      volumes:
+        - name: config
+          configMap:
+            name: metricbeat-config
+        - name: modules
+          hostPath:
+            path: /usr/share/metricbeat/modules.d
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: root
+          hostPath:
+            path: /
+        - name: data
+          hostPath:
+            path: /var/lib/metricbeat-data
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metricbeat
+  namespace: mlauditor
+  labels:
+    app: metricbeat
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: metricbeat
+  labels:
+    app: metricbeat
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "nodes", "events", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metricbeat
+  labels:
+    app: metricbeat
+roleRef:
+  kind: ClusterRole
+  name: metricbeat
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+  - kind: ServiceAccount
+    name: metricbeat
+    namespace: mlauditor

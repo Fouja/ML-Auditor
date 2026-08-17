@@ -1,15 +1,22 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   IntegrationStatus,
-  EmailMessage,
   CalendarEvent,
   PlaidAccount,
   PlaidTransaction,
@@ -47,11 +54,11 @@ function IntegrationCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card>
+    <Card className="panel-gilded">
       <CardHeader className="flex flex-row items-center gap-3 pb-2">
         <div className="text-2xl">{icon}</div>
         <div className="flex-1">
-          <CardTitle className="text-base">{title}</CardTitle>
+          <CardTitle className="text-base font-display tracking-wide">{title}</CardTitle>
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
         <StatusBadge connected={connected} />
@@ -70,9 +77,7 @@ function EmailSection() {
   const [smtpHost, setSmtpHost] = useState('');
   const [password, setPassword] = useState('');
   const [showConfig, setShowConfig] = useState(false);
-  const [to, setTo] = useState('');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const { data: statusData } = useQuery({
     queryKey: ['emailStatus'],
@@ -82,13 +87,13 @@ function EmailSection() {
     },
   });
 
-  const { data: emailData, isLoading, error: emailError } = useQuery({
-    queryKey: ['emailMessages'],
+  const { data: clusterData, isLoading: clustersLoading } = useQuery({
+    queryKey: ['emailClusters'],
     queryFn: async () => {
-      const res = await api.get('/integrations/email/sync', { params: { folder: 'INBOX', limit: 20 } });
-      return res.data as { messages: EmailMessage[]; count: number; error?: string };
+      const res = await api.get('/integrations/email/clusters');
+      return res.data as { clusters: { category: string; count: number; label: string; image_url: string }[]; total: number; connected: boolean };
     },
-    enabled: statusData?.connected,
+    enabled: !!statusData?.connected,
     retry: false,
   });
 
@@ -114,68 +119,67 @@ function EmailSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emailStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
       setShowConfig(false);
       setPassword('');
+      toast({ title: 'Connected', description: 'Email configured — syncing clusters', variant: 'success' });
+      syncClusters();
+    },
+    onError: () => {
+      toast({ title: 'Error', description: 'Failed to configure email', variant: 'error' });
     },
   });
 
-  const sendMutation = useMutation({
-    mutationFn: async () => {
-      const res = await api.post('/integrations/email/send', { to, subject, body });
-      return res.data;
-    },
-    onSuccess: () => { setTo(''); setSubject(''); setBody(''); },
-  });
+  const syncClusters = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.get('/integrations/email/sync', { params: { folder: 'INBOX', limit: 100 } });
+      queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
+      const count = (res.data as { count?: number })?.count ?? 0;
+      if (count > 0) {
+        toast({ title: 'Emails synced', description: `${count} messages indexed into clusters`, variant: 'success' });
+      }
+    } catch {
+      toast({ title: 'Sync failed', description: 'Could not sync email clusters', variant: 'error' });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const connected = statusData?.connected;
 
   return (
     <IntegrationCard
       title="Email (Any Provider)"
-      description="IMAP/SMTP — Gmail, Outlook, Yahoo, or custom"
+      description="IMAP/SMTP — syncs into dashboard clusters"
       connected={!!connected}
       icon="✉️"
     >
       {connected ? (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
             Connected via {statusData?.provider} ({statusData?.imap_host})
           </p>
-          {emailData?.error && (
-            <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded p-2">
-              {emailData.error}
-            </p>
-          )}
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading messages...</p>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {(emailData?.messages ?? []).slice(0, 10).map((msg) => (
-                <div key={msg.id} className="border rounded p-2 text-sm">
-                  <p className="font-medium truncate">{msg.subject}</p>
-                  <p className="text-muted-foreground text-xs">From: {msg.from}</p>
-                  <p className="text-xs truncate">{msg.snippet}</p>
-                </div>
-              ))}
-              {emailData?.messages.length === 0 && !emailData?.error && (
-                <p className="text-sm text-muted-foreground">No messages found.</p>
-              )}
-            </div>
-          )}
-          <div className="border-t pt-3 space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">Send email</p>
-            <Input placeholder="To" value={to} onChange={(e) => setTo(e.target.value)} />
-            <Input placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
-            <textarea
-              className="w-full rounded border bg-transparent px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder="Body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <Button size="sm" disabled={!to || !subject || sendMutation.isPending} onClick={() => sendMutation.mutate()}>
-              {sendMutation.isPending ? 'Sending...' : 'Send'}
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-muted-foreground">Email clusters</p>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={syncing} onClick={syncClusters}>
+              {syncing ? 'Syncing…' : 'Sync inbox'}
             </Button>
           </div>
+          {clustersLoading ? (
+            <p className="text-sm text-muted-foreground">Loading clusters…</p>
+          ) : (clusterData?.clusters ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No clusters yet. Click “Sync inbox” to index your emails.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {(clusterData?.clusters ?? []).slice(0, 10).map((c) => (
+                <div key={c.category} className="flex items-center justify-between border rounded p-1.5 text-sm">
+                  <span className="capitalize">{c.label}</span>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{c.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : showConfig ? (
         <div className="space-y-3">
@@ -221,7 +225,7 @@ function EmailSection() {
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            Connect any email provider via IMAP/SMTP. Works with Gmail, Outlook, Yahoo, and more.
+            Connect any email provider via IMAP/SMTP. Emails are indexed into clusters so Argus can answer mail questions.
           </p>
           <Button size="sm" onClick={() => setShowConfig(true)}>Configure Email</Button>
         </div>
@@ -233,59 +237,81 @@ function EmailSection() {
 // ─── Gmail (Google API) ─────────────────────────────────────────────
 
 function GmailSection({ connected }: { connected: boolean }) {
-  const [to, setTo] = useState('');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const queryClient = useQueryClient();
+  const [syncing, setSyncing] = useState(false);
 
-  const { data: emailData, isLoading } = useQuery({
-    queryKey: ['gmailMessages'],
+  const { data: clusterData, isLoading: clustersLoading } = useQuery({
+    queryKey: ['emailClusters'],
     queryFn: async () => {
-      const res = await api.get('/integrations/gmail/sync', { params: { max_results: 20 } });
-      return res.data as { messages: EmailMessage[]; count: number; error?: string };
+      const res = await api.get('/integrations/email/clusters');
+      return res.data as { clusters: { category: string; count: number; label: string; image_url: string }[]; total: number; connected: boolean };
     },
     enabled: connected,
     retry: false,
   });
 
-  const sendMutation = useMutation({
-    mutationFn: async () => {
-      const res = await api.post('/integrations/gmail/send', { to, subject, body });
-      return res.data;
-    },
-    onSuccess: () => { setTo(''); setSubject(''); setBody(''); },
-  });
+  const syncClusters = async (silent = false) => {
+    setSyncing(true);
+    try {
+      const res = await api.post('/integrations/gmail/sync-clusters');
+      queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
+      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+      const indexed = (res.data as { indexed?: number })?.indexed ?? 0;
+      const synced = (res.data as { synced?: number })?.synced ?? 0;
+      if (!silent && (indexed > 0 || synced > 0)) {
+        toast({ title: 'Gmail synced', description: `${synced} messages indexed into clusters`, variant: 'success' });
+      }
+    } catch {
+      if (!silent) toast({ title: 'Sync failed', description: 'Could not sync Gmail clusters', variant: 'error' });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (connected) {
+      syncClusters(true);
+    }
+  }, [connected]);
 
   return (
-    <IntegrationCard title="Gmail (Google API)" description="OAuth2 direct access" connected={connected} icon="📧">
+    <IntegrationCard title="Gmail (OAuth2)" description="One-click Google OAuth — syncs mail into dashboard clusters" connected={connected} icon="📧">
       {connected ? (
-        <div className="space-y-4">
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading messages...</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-muted-foreground">Email clusters</p>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={syncing} onClick={() => syncClusters(false)}>
+              {syncing ? 'Syncing…' : 'Sync Gmail'}
+            </Button>
+          </div>
+          {clustersLoading ? (
+            <p className="text-sm text-muted-foreground">Loading clusters…</p>
+          ) : (clusterData?.clusters ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No clusters yet. Click “Sync Gmail” to index your inbox — Argus will then be able to answer mail questions.</p>
           ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {(emailData?.messages ?? []).map((msg) => (
-                <div key={msg.id} className="border rounded p-2 text-sm">
-                  <p className="font-medium truncate">{msg.subject}</p>
-                  <p className="text-muted-foreground text-xs">From: {msg.from}</p>
-                  <p className="text-xs truncate">{msg.snippet}</p>
+            <div className="space-y-1.5 max-h-52 overflow-y-auto">
+              {(clusterData?.clusters ?? []).slice(0, 12).map((c) => (
+                <div key={c.category} className="flex items-center justify-between border rounded p-1.5 text-sm">
+                  <span className="capitalize">{c.label}</span>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{c.count}</span>
                 </div>
               ))}
             </div>
           )}
-          <div className="border-t pt-3 space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">Send email</p>
-            <Input placeholder="To" value={to} onChange={(e) => setTo(e.target.value)} />
-            <Input placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
-            <textarea className="w-full rounded border bg-transparent px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Body" value={body} onChange={(e) => setBody(e.target.value)} />
-            <Button size="sm" disabled={!to || !subject || sendMutation.isPending} onClick={() => sendMutation.mutate()}>
-              {sendMutation.isPending ? 'Sending...' : 'Send'}
-            </Button>
-          </div>
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Connect your Google account via OAuth2.</p>
-          <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/google'); window.location.href = res.data.url; }}>Connect Gmail</Button>
+          <p className="text-sm text-muted-foreground">
+            Connect Gmail with OAuth2 so Argus can retrieve mail, build email clusters, and answer questions about your inbox.
+          </p>
+          <div className="rounded border border-slate-300 bg-slate-50 dark:bg-slate-800/60 p-2 text-xs text-muted-foreground space-y-1">
+            <p>If you see <code className="font-mono">access_denied</code> or <code className="font-mono">redirect_uri_mismatch</code>, in the Google Cloud console (APIs &amp; Services → Credentials → OAuth 2.0 Web client):</p>
+            <p>1) Add your Google account as a <strong>Test user</strong> on the OAuth consent screen.</p>
+            <p>2) Add this Authorized redirect URI:</p>
+            <code className="font-mono text-[11px] break-all">{'http://localhost:8000/api/integrations/oauth/google/callback'}</code>
+            <p>3) Enable the Gmail + Calendar APIs in the same project.</p>
+          </div>
+          <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/google'); window.location.href = res.data.url; }}>Connect with Google OAuth2</Button>
         </div>
       )}
     </IntegrationCard>
@@ -358,6 +384,17 @@ function CalendarSection({ connected }: { connected: boolean }) {
 // ─── Plaid (Banking) ────────────────────────────────────────────────
 
 function PlaidSection({ connected }: { connected: boolean }) {
+  const queryClient = useQueryClient();
+
+  const { data: plaidMode } = useQuery({
+    queryKey: ['plaidMode'],
+    queryFn: async () => {
+      const res = await api.get('/integrations/plaid/mode');
+      return res.data as { mode: string; real_bank_supported: boolean; configured: boolean };
+    },
+    retry: false,
+  });
+
   const { data: accountData, isLoading: accountsLoading } = useQuery({
     queryKey: ['plaidAccounts'],
     queryFn: async () => { const res = await api.get('/integrations/plaid/accounts'); return res.data as { accounts: PlaidAccount[]; count: number; error?: string }; },
@@ -375,15 +412,34 @@ function PlaidSection({ connected }: { connected: boolean }) {
   const handleConnect = async () => {
     try {
       const res = await api.get('/integrations/plaid/link-token');
-      const { link_token } = res.data;
-      if (link_token && typeof window !== 'undefined' && (window as any).Plaid) {
-        const handler = (window as any).Plaid.create({
-          token: link_token,
-          onSuccess: async (publicToken: string) => { await api.post('/integrations/plaid/exchange', { public_token: publicToken }); },
-        });
-        handler.open();
+      const { link_token, error } = res.data;
+      if (!link_token) {
+        console.error('Plaid link token missing:', error);
+        alert(error || 'Failed to create Plaid link token. Check PLAID_* env vars.');
+        return;
       }
-    } catch (err) { console.error('Plaid Link init failed:', err); }
+      if (typeof window === 'undefined' || !(window as any).Plaid) {
+        alert('Plaid Link SDK not loaded. Refresh the page and try again.');
+        return;
+      }
+      const handler = (window as any).Plaid.create({
+        token: link_token,
+        onSuccess: async (publicToken: string) => {
+          await api.post('/integrations/plaid/exchange', { public_token: publicToken });
+          queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+          queryClient.invalidateQueries({ queryKey: ['plaidAccounts'] });
+          queryClient.invalidateQueries({ queryKey: ['plaidTransactions'] });
+          queryClient.invalidateQueries({ queryKey: ['plaidClusters'] });
+        },
+        onExit: (err: any) => {
+          if (err) console.error('Plaid Link exit:', err);
+        },
+      });
+      handler.open();
+    } catch (err) {
+      console.error('Plaid Link init failed:', err);
+      alert('Plaid Link failed to start. Check console for details.');
+    }
   };
 
   return (
@@ -419,6 +475,12 @@ function PlaidSection({ connected }: { connected: boolean }) {
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Link your bank account securely via Plaid.</p>
+          {plaidMode && !plaidMode.real_bank_supported && (
+            <div className="rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-800 dark:text-amber-200 space-y-1">
+              <p className="font-medium">Plaid is in {plaidMode.mode} mode — real bank logins won't work here.</p>
+              <p>Plaid Link in sandbox only accepts fake test credentials (user_good / pass_good). To connect your real Scotiabank account, set <code className="font-mono">PLAID_ENV=development</code> with development-mode API keys from the Plaid dashboard, then restart the backend.</p>
+            </div>
+          )}
           <Button size="sm" onClick={handleConnect}>Connect Bank Account</Button>
         </div>
       )}
@@ -543,13 +605,472 @@ function KijijiSection() {
   );
 }
 
+// ─── Jira ──────────────────────────────────────────────────────────
+
+function JiraSection({ connected }: { connected: boolean }) {
+  const queryClient = useQueryClient();
+  const [siteUrl, setSiteUrl] = useState('');
+  const [jiraEmail, setJiraEmail] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [showConfig, setShowConfig] = useState(false);
+  const [selectedProject, setSelectedProject] = useState('');
+  const [jql, setJql] = useState('');
+
+  const { data: projectsData, isLoading: projectsLoading } = useQuery({
+    queryKey: ['jiraProjects'],
+    queryFn: async () => { const res = await api.get('/integrations/jira/projects'); return res.data as { projects: any[]; count: number; error?: string }; },
+    enabled: connected,
+    retry: false,
+  });
+
+  const { data: issuesData, isLoading: issuesLoading, refetch: refetchIssues } = useQuery({
+    queryKey: ['jiraIssues', selectedProject],
+    queryFn: async () => {
+      const res = await api.post('/integrations/jira/issues', { project_key: selectedProject || undefined, max_results: 20 });
+      return res.data as { issues: any[]; count: number; error?: string };
+    },
+    enabled: connected && !!selectedProject,
+    retry: false,
+  });
+
+  const [jiraError, setJiraError] = useState('');
+  const configureMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/integrations/jira/configure', { site_url: siteUrl, email: jiraEmail, api_token: apiToken });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+        queryClient.invalidateQueries({ queryKey: ['jiraProjects'] });
+        setShowConfig(false);
+        setApiToken('');
+        setJiraError('');
+        toast({ title: 'Connected', description: 'Jira configured successfully', variant: 'success' });
+      } else {
+        setJiraError(data.error || 'Connection failed');
+      }
+    },
+    onError: (err: any) => {
+      setJiraError(err?.response?.data?.detail || err?.response?.data?.error || 'Failed to connect to Jira');
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/integrations/jira/sync', { project_key: selectedProject || undefined, max_results: 50 });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: 'Synced', description: `Synced ${data.issues_synced} issues to RAG`, variant: 'success' });
+      } else {
+        toast({ title: 'Sync failed', description: data.error || 'Unknown error', variant: 'error' });
+      }
+    },
+    onError: () => {
+      toast({ title: 'Sync failed', description: 'Sync request failed', variant: 'error' });
+    },
+  });
+
+  return (
+    <IntegrationCard title="Jira" description="Project management issues and sprints" connected={connected} icon="⬣">
+      {connected ? (
+        <div className="space-y-4">
+          {projectsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading projects...</p>
+          ) : (
+            <div className="space-y-2">
+              <select
+                className="w-full rounded border bg-transparent px-3 py-2 text-sm"
+                value={selectedProject}
+                onChange={(e) => setSelectedProject(e.target.value)}
+              >
+                <option value="">Select a project...</option>
+                {(projectsData?.projects ?? []).map((p: any) => (
+                  <option key={p.id} value={p.key}>{p.name} ({p.key})</option>
+                ))}
+              </select>
+          {issuesData?.error && (
+            <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded p-2">{issuesData.error}</p>
+          )}
+          {selectedProject && (
+                <>
+                  {issuesLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading issues...</p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {(issuesData?.issues ?? []).slice(0, 10).map((issue: any) => (
+                        <div key={issue.id} className="border rounded p-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-muted-foreground">{issue.key}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              issue.priority === 'Highest' || issue.priority === 'High' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                              issue.priority === 'Lowest' || issue.priority === 'Low' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                              'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                            }`}>{issue.priority}</span>
+                          </div>
+                          <p className="font-medium truncate">{issue.summary}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {issue.status} · {issue.assignee_display || 'Unassigned'}
+                          </p>
+                        </div>
+                      ))}
+                      {issuesData?.issues?.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No issues found.</p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2 border-t pt-3">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => refetchIssues()}>
+              Refresh
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+              {syncMutation.isPending ? 'Syncing...' : 'Sync to RAG'}
+            </Button>
+            <Button
+              size="sm" variant="ghost" className="h-7 text-xs text-destructive ml-auto"
+              onClick={async () => {
+                await api.post('/integrations/jira/configure', { site_url: '', email: '', api_token: '' });
+                queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+              }}
+            >
+              Disconnect
+            </Button>
+          </div>
+        </div>
+      ) : showConfig ? (
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Jira Site URL</Label>
+            <Input placeholder="https://your-domain.atlassian.net" value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Email</Label>
+            <Input placeholder="your@email.com" value={jiraEmail} onChange={(e) => setJiraEmail(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">API Token</Label>
+            <Input type="password" placeholder="From https://id.atlassian.com/manage/api-tokens" value={apiToken} onChange={(e) => setApiToken(e.target.value)} />
+          </div>
+          {jiraError && (
+            <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded p-2">{jiraError}</p>
+          )}
+          <div className="flex gap-2">
+            <Button size="sm" disabled={!siteUrl || !jiraEmail || !apiToken || configureMutation.isPending} onClick={() => configureMutation.mutate()}>
+              {configureMutation.isPending ? 'Testing...' : 'Connect'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowConfig(false)}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">Connect Jira to browse projects, view issues, and sync them into the RAG knowledge base.</p>
+          <Button size="sm" onClick={() => setShowConfig(true)}>Configure Jira</Button>
+        </div>
+      )}
+    </IntegrationCard>
+  );
+}
+
+// ─── Web Tools microservice (Agent-Reach) ───────────────────────────
+
+function WebToolsSection() {
+  const queryClient = useQueryClient();
+  const { data: status, isLoading } = useQuery({
+    queryKey: ['webToolsStatus'],
+    queryFn: async () => {
+      const res = await api.get('/agents/web-tools/status');
+      return res.data as {
+        connected: boolean;
+        health?: { status: string; search_provider?: string };
+        error?: string;
+      };
+    },
+  });
+
+  const { data: pref, isLoading: prefLoading } = useQuery({
+    queryKey: ['webToolsPreference'],
+    queryFn: async () => {
+      const res = await api.get('/integrations/web-tools/preference');
+      return res.data as { enabled: boolean };
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await api.post('/integrations/web-tools/preference', { enabled });
+      return res.data as { enabled: boolean };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['webToolsPreference'] });
+    },
+  });
+
+  const provider =
+    status?.health?.search_provider === 'exa'
+      ? 'Exa AI'
+      : 'DuckDuckGo (keyless)';
+  const enabled = !!pref?.enabled;
+
+  return (
+    <IntegrationCard
+      title="Web Tools (Agent Reach)"
+      description="Live web search, page fetch & RSS — feeds the chatbot with real-time information when activated."
+      connected={!!status?.connected && enabled}
+      icon="🌐"
+    >
+      <div className="space-y-3">
+        {isLoading || prefLoading ? (
+          <p className="text-sm text-muted-foreground">Checking microservice...</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs ${
+                enabled
+                  ? 'border-accent/40 bg-accent/20 text-accent-foreground'
+                  : 'border-border bg-muted text-muted-foreground'
+              }`}>
+                {enabled ? 'Activated for chat' : 'Deactivated'}
+              </span>
+              {status?.connected && (
+                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+                  {provider}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              When activated, the assistant can search the web and fetch live pages.
+              When off, live-info questions will tell you to enable this toggle.
+            </p>
+            {!status?.connected && (
+              <p className="text-xs text-amber-600">
+                Microservice unreachable — start{' '}
+                <code className="rounded bg-muted px-1">mlauditor_web_tools</code>.
+              </p>
+            )}
+            <Button
+              size="sm"
+              variant={enabled ? 'outline' : 'default'}
+              disabled={toggleMutation.isPending || !status?.connected}
+              onClick={() => toggleMutation.mutate(!enabled)}
+            >
+              {toggleMutation.isPending
+                ? 'Saving…'
+                : enabled
+                  ? 'Deactivate Web Tools'
+                  : 'Activate Web Tools'}
+            </Button>
+          </>
+        )}
+      </div>
+    </IntegrationCard>
+  );
+}
+
+// ─── JobChameleon microservice (job intelligence) ──────────────────
+
+function JobChameleonSection() {
+  const { data: status, isLoading } = useQuery({
+    queryKey: ['jobchameleonStatus'],
+    queryFn: async () => {
+      const res = await api.get('/agents/jobchameleon/status');
+      return res.data as {
+        connected?: boolean;
+        llm_provider?: string;
+        llm_model?: string;
+        error?: string;
+      };
+    },
+  });
+
+  const launchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.get('/agents/jobchameleon/launch');
+      return res.data as {
+        url: string;
+        token: string;
+        success?: boolean;
+        error?: string;
+        console_url?: string;
+      };
+    },
+    onSuccess: (data) => {
+      if (data.success === false || !data.url) {
+        const fallback = data.console_url;
+        if (fallback) window.open(fallback, '_blank', 'noopener,noreferrer');
+        toast({
+          title: 'Workbench not available',
+          description: data.error || 'The full workbench could not be started. Opening the gateway console instead.',
+          variant: 'error',
+        });
+        return;
+      }
+      const target = `${data.url}${data.url.includes('?') ? '&' : '?'}token=${encodeURIComponent(data.token)}`;
+      window.open(target, '_blank', 'noopener,noreferrer');
+      toast({
+        title: 'JOBchameleon launched',
+        description: 'The full app opened on its own port in a new tab. MCP is connected automatically.',
+        variant: 'success',
+      });
+    },
+    onError: () => {
+      toast({ title: 'Launch failed', description: 'Check that the JOBchameleon container is running.', variant: 'error' });
+    },
+  });
+
+  return (
+    <IntegrationCard
+      title="JobChameleon (Job Intelligence)"
+      description="Dedicated AI hiring workbench — job-fit scoring, lead quality, lead intel, chat-driven clusters."
+      connected={!!status?.connected}
+      icon="🦎"
+    >
+      <div className="space-y-3">
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Checking microservice...</p>
+        ) : status?.connected ? (
+          <>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              JOBchameleon is a standalone job-intelligence app. Launch the full
+              workbench from here — it opens on its own port in a new tab and
+              connects to Argus over MCP automatically.
+            </p>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => launchMutation.mutate()}
+              disabled={launchMutation.isPending}
+            >
+              {launchMutation.isPending ? 'Launching…' : 'Launch JOBchameleon'}
+            </Button>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            The JobChameleon microservice is not reachable. Make sure the{' '}
+            <code className="text-xs bg-muted px-1 rounded">mlauditor_jobchameleon</code>{' '}
+            container is running.
+          </p>
+        )}
+      </div>
+    </IntegrationCard>
+  );
+}
+
+// ─── Mock data (demo content) ──────────────────────────────────────
+
+function MockDataSection() {
+  const queryClient = useQueryClient();
+  const { data: status, isLoading } = useQuery({
+    queryKey: ['mockDataStatus'],
+    queryFn: async () => {
+      const res = await api.get('/integrations/mock/status');
+      return res.data as { enabled: boolean; streams: number; chunks: number; alerts: number };
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await api.post('/integrations/mock', { enabled });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mockDataStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
+      queryClient.invalidateQueries({ queryKey: ['plaidClusters'] });
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      toast({
+        title: status?.enabled ? 'Mock data deactivated' : 'Mock data activated',
+        description: status?.enabled
+          ? 'Placeholder data removed — real data untouched.'
+          : 'Demo content injected into clusters, alerts and RAG.',
+        variant: status?.enabled ? 'default' : 'success',
+      });
+    },
+    onError: () => {
+      toast({ title: 'Error', description: 'Failed to toggle mock data', variant: 'error' });
+    },
+  });
+
+  const enabled = !!status?.enabled;
+
+  return (
+    <IntegrationCard
+      title="Mock Data (Demo)"
+      description="Activate placeholder content so clusters, notifications, analytics and the chatbot have sample data to work with."
+      connected={enabled}
+      icon="🧪"
+    >
+      <div className="space-y-3">
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Checking status...</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs ${
+                enabled
+                  ? 'border-accent/40 bg-accent/20 text-accent-foreground'
+                  : 'border-border bg-muted text-muted-foreground'
+              }`}>
+                {enabled ? 'Active' : 'Deactivated'}
+              </span>
+              {enabled && (
+                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+                  {status.chunks} chunks · {status.alerts} alerts
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {enabled
+                ? 'Mock content is live in your dashboard. Deactivate any time to remove it and keep only your real data.'
+                : 'Great for exploring the dashboard: injects sample job alerts, emails, transactions and RAG documents.'}
+            </p>
+            <Button
+              size="sm"
+              variant={enabled ? 'outline' : 'default'}
+              disabled={toggleMutation.isPending}
+              onClick={() => toggleMutation.mutate(!enabled)}
+            >
+              {toggleMutation.isPending
+                ? 'Saving…'
+                : enabled
+                  ? 'Deactivate Mock Data'
+                  : 'Activate Mock Data'}
+            </Button>
+          </>
+        )}
+      </div>
+    </IntegrationCard>
+  );
+}
+
 // ─── Main panel ─────────────────────────────────────────────────────
 
 export function IntegrationsPanel() {
-  const { data: status, isLoading } = useQuery<IntegrationStatus>({
+  const queryClient = useQueryClient();
+  const { data: status, isLoading, isError } = useQuery<IntegrationStatus>({
     queryKey: ['integrationStatus'],
     queryFn: async () => { const res = await api.get('/integrations/status'); return res.data; },
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get('oauth');
+    if (oauth === 'success') {
+      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
+      toast({ title: 'Google connected', description: 'Syncing your Gmail clusters…', variant: 'success' });
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (oauth === 'error') {
+      toast({ title: 'Google OAuth failed', description: 'Check that your account is a Test user on the OAuth consent screen.', variant: 'error' });
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [queryClient]);
 
   if (isLoading) {
     return (
@@ -561,11 +1082,31 @@ export function IntegrationsPanel() {
     );
   }
 
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-4 py-3">
+          Failed to load integration status. Check your connection and try again.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* AI & Web Tools */}
+      <div>
+        <SectionHeading>AI &amp; Web Tools</SectionHeading>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <WebToolsSection />
+          <JobChameleonSection />
+          <MockDataSection />
+        </div>
+      </div>
+
       {/* Primary integrations */}
       <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-3">Primary</h3>
+        <SectionHeading>Primary</SectionHeading>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <EmailSection />
           <CalendarSection connected={status?.calendar?.connected ?? false} />
@@ -576,12 +1117,25 @@ export function IntegrationsPanel() {
 
       {/* Secondary integrations */}
       <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-3">Marketplace & Design</h3>
+        <SectionHeading>Marketplace, Design &amp; Dev</SectionHeading>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <CanvaSection connected={status?.canva?.connected ?? false} />
+          <JiraSection connected={status?.jira?.connected ?? false} />
           <KijijiSection />
         </div>
       </div>
+    </div>
+  );
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex items-center gap-3">
+      <hr className="accent-rule flex-1" />
+      <h3 className="font-display text-sm uppercase tracking-[0.3em] text-accent-foreground">
+        {children}
+      </h3>
+      <hr className="accent-rule flex-1" />
     </div>
   );
 }

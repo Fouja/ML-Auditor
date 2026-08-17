@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlauditor-celery-worker
+  namespace: mlauditor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlauditor-celery-worker
+  template:
+    metadata:
+      labels:
+        app: mlauditor-celery-worker
+    spec:
+      containers:
+        - name: worker
+          image: mlauditor/backend:latest
+          command: ["celery", "-A", "config", "worker", "-l", "info", "-c", "4"]
+          envFrom:
+            - secretRef:
+                name: mlauditor-secrets
+            - configMapRef:
+                name: mlauditor-config
+          env:
+            - name: DJANGO_DATABASE_URL
+              value: "postgres://mlauditor:$(POSTGRES_PASSWORD)@postgresql:5432/mlauditor_db"
+            - name: DJANGO_CACHE_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            - name: DJANGO_CELERY_BROKER_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/1"
+            - name: DJANGO_CELERY_RESULT_BACKEND
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/2"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlauditor-celery-beat
+  namespace: mlauditor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlauditor-celery-beat
+  template:
+    metadata:
+      labels:
+        app: mlauditor-celery-beat
+    spec:
+      containers:
+        - name: beat
+          image: mlauditor/backend:latest
+          command: ["celery", "-A", "config", "beat", "-l", "info"]
+          envFrom:
+            - secretRef:
+                name: mlauditor-secrets
+            - configMapRef:
+                name: mlauditor-config
+          env:
+            - name: DJANGO_DATABASE_URL
+              value: "postgres://mlauditor:$(POSTGRES_PASSWORD)@postgresql:5432/mlauditor_db"
+            - name: DJANGO_CELERY_BROKER_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/1"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

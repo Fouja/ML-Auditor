@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-pipeline
+  namespace: mlauditor
+data:
+  logstash.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+      tcp {
+        port => 5000
+        codec => json_lines
+      }
+    }
+
+    filter {
+      if [@metadata][beat] {
+        if [log][file][path] {
+          mutate { add_field => { "path" => "%{[log][file][path]}" } }
+        }
+      }
+      date {
+        match => ["@timestamp", "ISO8601"]
+        target => "@timestamp"
+      }
+      if [kubernetes][namespace] {
+        mutate { add_field => { "index_prefix" => "ml-auditor-k8s" } }
+      } else if [service] == "backend" {
+        mutate { add_field => { "index_prefix" => "ml-auditor-backend" } }
+      } else if [service] == "frontend" {
+        mutate { add_field => { "index_prefix" => "ml-auditor-frontend" } }
+      } else {
+        mutate { add_field => { "index_prefix" => "ml-auditor-tcp-ingest" } }
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["http://elasticsearch:9200"]
+        index => "%{index_prefix}-%{+YYYY.MM.dd}"
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: mlauditor
+  labels:
+    app: logstash
+spec:
+  selector:
+    app: logstash
+  ports:
+    - name: beats
+      port: 5044
+      targetPort: 5044
+    - name: tcp
+      port: 5000
+      targetPort: 5000
+    - name: api
+      port: 9600
+      targetPort: 9600
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: mlauditor
+  labels:
+    app: logstash
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: docker.elastic.co/logstash/logstash:8.13.4
+          ports:
+            - containerPort: 5044
+            - containerPort: 5000
+            - containerPort: 9600
+          env:
+            - name: XPACK_MONITORING_ENABLED
+              value: "false"
+          resources:
+            requests:
+              cpu: 300m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9600
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: pipeline
+              mountPath: /usr/share/logstash/pipeline
+      volumes:
+        - name: pipeline
+          configMap:
+            name: logstash-pipeline

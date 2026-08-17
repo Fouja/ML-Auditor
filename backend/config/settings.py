@@ -32,7 +32,12 @@ env = environ.Env(
     JWT_REFRESH_TOKEN_LIFETIME=(int, 604800),
     NIM_API_KEY=(str, ""),
     NIM_BASE_URL=(str, "https://integrate.api.nvidia.com/v1"),
-    NIM_MODEL=(str, "meta/llama-3.3-70b-instruct"),
+    NIM_MODEL=(str, "meta/llama-3.1-8b-instruct"),
+    JC_URL=(str, "http://localhost:8787"),
+    JC_MCP_URL=(str, "http://localhost:8788/mcp"),
+    JC_PUBLIC_URL=(str, "http://localhost:8787"),
+    JCAPP_PUBLIC_URL=(str, "http://localhost:8088"),
+    JC_API_TOKEN=(str, ""),
     PLAID_CLIENT_ID=(str, ""),
     PLAID_SECRET=(str, ""),
     PLAID_ENV=(str, "sandbox"),
@@ -41,7 +46,6 @@ env = environ.Env(
     CANVA_CLIENT_ID=(str, ""),
     CANVA_CLIENT_SECRET=(str, ""),
     SENTRY_DSN=(str, ""),
-    ML_SERVICE_URL=(str, "http://localhost:8001"),
     ELASTICSEARCH_URL=(str, "http://localhost:9200"),
 )
 
@@ -51,10 +55,36 @@ environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 
+# Optional override used to derive the at-rest encryption key for stored
+# credentials (e.g. LLMConfiguration.api_key). When unset, the key is derived
+# from DJANGO_SECRET_KEY.
+SECRET_ENCRYPTION_KEY = env("SECRET_ENCRYPTION_KEY", default="")
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DJANGO_DEBUG")
 
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
+
+# Refuse to run with known-insecure secrets outside of DEBUG.
+_INSECURE_SECRETS = {
+    "django-insecure-change-me-in-production",
+    "django-insecure-dev-key-change-in-production",
+    "jwt-secret-change-me-in-production",
+}
+
+if not DEBUG:
+    from django.core.exceptions import ImproperlyConfigured
+
+    if SECRET_KEY in _INSECURE_SECRETS:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY is set to an insecure default. Generate a strong "
+            "random key (scripts/generate_secrets.sh) and put it in .env."
+        )
+    if env("JWT_SECRET_KEY") in _INSECURE_SECRETS:
+        raise ImproperlyConfigured(
+            "JWT_SECRET_KEY is set to an insecure default. Generate a strong "
+            "random key (scripts/generate_secrets.sh) and put it in .env."
+        )
 
 # Application definition
 
@@ -74,6 +104,7 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "django_celery_beat",
     "django_celery_results",
+    "elasticapm.contrib.django",
 ]
 
 LOCAL_APPS = [
@@ -90,6 +121,7 @@ LOCAL_APPS = [
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
+    "elasticapm.contrib.django.middleware.TracingMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -189,6 +221,19 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+ELASTICSEARCH_URL = env("ELASTICSEARCH_URL")
+WEB_TOOLS_URL = env("WEB_TOOLS_URL", default="http://localhost:8090")
+
+# Elastic APM — traces from the Django app are sent to the apm-server service
+# (docker-compose) and visualised in Kibana → Observability → APM.
+ELASTIC_APM = {
+    "SERVICE_NAME": env("ELASTIC_APM_SERVICE_NAME", default="ml-auditor-backend"),
+    "SERVER_URL": env("ELASTIC_APM_SERVER_URL", default="http://apm-server:8200"),
+    "ENVIRONMENT": env("DJANGO_ENV", default="development"),
+    "ENABLED": env.bool("ELASTIC_APM_ENABLED", default=True),
+    "DEBUG": DEBUG,
+}
+
 # Channels
 CHANNEL_LAYERS = {
     "default": {
@@ -199,18 +244,50 @@ CHANNEL_LAYERS = {
     },
 }
 
-# JWT Configuration
+# JWT Configuration (single source of truth shared by NINJA_JWT and SIMPLE_JWT)
+_JWT_ACCESS_TOKEN_LIFETIME = timedelta(seconds=env("JWT_ACCESS_TOKEN_LIFETIME"))
+_JWT_REFRESH_TOKEN_LIFETIME = timedelta(seconds=env("JWT_REFRESH_TOKEN_LIFETIME"))
+_JWT_SIGNING_KEY = env("JWT_SECRET_KEY")
+
 NINJA_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(seconds=env("JWT_ACCESS_TOKEN_LIFETIME")),
-    "REFRESH_TOKEN_LIFETIME": timedelta(seconds=env("JWT_REFRESH_TOKEN_LIFETIME")),
+    "ACCESS_TOKEN_LIFETIME": _JWT_ACCESS_TOKEN_LIFETIME,
+    "REFRESH_TOKEN_LIFETIME": _JWT_REFRESH_TOKEN_LIFETIME,
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
-    "SIGNING_KEY": env("JWT_SECRET_KEY"),
+    "SIGNING_KEY": _JWT_SIGNING_KEY,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# ML Service
-ML_SERVICE_URL = env("ML_SERVICE_URL")
+# SimpleJWT — used by the custom login/refresh views via RefreshToken.for_user.
+SIMPLE_JWT = dict(NINJA_JWT)
+
+# NIM (NVIDIA Inference Microservices)
+NIM_API_KEY = env("NIM_API_KEY")
+NIM_BASE_URL = env("NIM_BASE_URL")
+NIM_MODEL = env("NIM_MODEL")
+
+# JobChameleon microservice (job intelligence)
+JC_URL = env("JC_URL", default="http://localhost:8787")
+JC_MCP_URL = env("JC_MCP_URL", default="http://localhost:8788/mcp")
+# Browser-facing URLs (the user's browser opens these, NOT the docker-internal
+# service names) — used by the JOBchameleon launch flow.
+JC_PUBLIC_URL = env("JC_PUBLIC_URL", default="http://localhost:8787")
+JCAPP_PUBLIC_URL = env("JCAPP_PUBLIC_URL", default="http://localhost:8088")
+JC_API_TOKEN = env("JC_API_TOKEN", default="")
+
+# Plaid / Google OAuth / Canva
+PLAID_CLIENT_ID = env("PLAID_CLIENT_ID", default="")
+PLAID_SECRET = env("PLAID_SECRET", default="")
+PLAID_ENV = env("PLAID_ENV", default="sandbox")
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
+GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")
+GOOGLE_OAUTH_REDIRECT_URI = env(
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    default="http://localhost:8000/api/integrations/oauth/google/callback",
+)
+CANVA_CLIENT_ID = env("CANVA_CLIENT_ID", default="")
+CANVA_CLIENT_SECRET = env("CANVA_CLIENT_SECRET", default="")
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
 
 # Sentry Configuration
 SENTRY_DSN = env("SENTRY_DSN")
@@ -260,6 +337,10 @@ class JSONFormatter(logging.Formatter):
         if hasattr(record, "response_time"):
             log_entry["response_time"] = record.response_time
 
+        if hasattr(record, "metrics") and isinstance(record.metrics, dict):
+            for k, v in record.metrics.items():
+                log_entry[k] = v
+
         if record.exc_info and record.exc_info[0]:
             log_entry["exception"] = {
                 "type": record.exc_info[0].__name__,
@@ -270,7 +351,7 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_entry, default=str)
 
 
-LOG_DIR = BASE_DIR.parent / "logs" / "backend"
+LOG_DIR = Path(os.environ.get("LOG_DIR", BASE_DIR.parent / "logs" / "backend"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 LOGGING = {

@@ -61,6 +61,41 @@ Pre-configured dashboards:
 - PostgreSQL: Connections, query time, cache hit ratio
 - Redis: Memory, ops/sec, hit ratio
 
+### Kibana Infrastructure Metrics
+
+Access at `http://localhost:5601`
+
+Metricbeat ships system and Docker container metrics into Elasticsearch. To see **which service is consuming what**, load the dashboards:
+
+```bash
+# 1. Load Metricbeat's built-in system and Docker dashboards
+docker compose up metricbeat-setup
+
+# 2. Import the ML-Auditor custom resource dashboard
+#    Kibana → Stack Management → Saved Objects → Import
+#    Select docker/kibana/ml-auditor-metrics-dashboards.ndjson
+```
+
+Recommended built-in dashboards after setup:
+- **[Metricbeat System] Overview ECS** — host CPU, memory, disk, network
+- **[Metricbeat System] Processes ECS** — top processes by CPU and memory
+- **[Metricbeat Docker] Overview ECS** — per-container CPU, memory, network, disk I/O
+
+Custom dashboard: **ML-Auditor Resource Usage** shows per-container breakdowns for:
+- CPU % by Docker container (`mlauditor_backend`, `mlauditor_frontend`, `mlauditor_db`, `mlauditor_redis`, `mlauditor_celery_worker`, etc.)
+- Memory usage by container
+- Network RX/TX by container
+- Disk read/write by container
+- Top processes by CPU and memory
+- System CPU and memory over time
+
+Useful Kibana queries for resource investigation:
+```kql
+metricset.name: cpu AND docker.container.name: mlauditor_backend
+metricset.name: memory AND system.process.name: python
+service.type: docker AND docker.cpu.total.pct > 50
+```
+
 ### Prometheus Alerts
 
 ```yaml
@@ -177,6 +212,12 @@ kubectl create secret generic mlauditor-secrets \
 # Restart pods
 kubectl rollout restart deployment/mlauditor-backend -n mlauditor
 ```
+
+> **Note:** rotating `DJANGO_SECRET_KEY` or `SECRET_ENCRYPTION_KEY` invalidates
+> all `enc::`-prefixed credentials stored in the DB (see `docs/SECURITY.md`).
+> Re-encrypt stored secrets with the new key before discarding the old one.
+> Provider keys (`NIM_API_KEY`, `JC_API_TOKEN`, `EXA_API_KEY`) are read from
+> the environment and can be rotated freely; restart the stack afterwards.
 
 ### SSL Certificate Renewal
 

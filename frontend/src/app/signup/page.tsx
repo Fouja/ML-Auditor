@@ -49,7 +49,7 @@ export default function SignupPage() {
           </div>
           <CardTitle className="text-2xl">Create an account</CardTitle>
           <CardDescription>
-            Get started with ML-Auditor
+            Get started with Argus
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

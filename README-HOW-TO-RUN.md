@@ -8,7 +8,7 @@ Autonomous AI agent system for intelligent management of emails, calendars, bank
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Python | 3.11+ | Backend & ML service |
+| Python | 3.11+ | Backend |
 | Node.js | 18+ | Frontend |
 | PostgreSQL | 16+ | Database (with pgvector extension) |
 | Redis | 7+ | Cache, Celery broker, Channels |
@@ -38,7 +38,7 @@ docker compose up
 |---------|-----|-------------|
 | Frontend | http://localhost:3000 | Next.js dashboard |
 | Backend API | http://localhost:8000/api/ | Django Ninja REST API |
-| ML Service | http://localhost:8001/health | FastAPI ML microservice |
+| MCP Server | http://localhost:8100/mcp | ML-Auditor tools over MCP |
 | Django Admin | http://localhost:8000/admin/ | Admin panel |
 | PostgreSQL | localhost:5432 | Database |
 | Redis | localhost:6379 | Cache & message broker |
@@ -54,7 +54,6 @@ docker compose up -d
 
 # View logs
 docker compose logs -f backend
-docker compose logs -f ml_service
 
 # Stop all
 docker compose down
@@ -134,29 +133,7 @@ source venv/bin/activate
 celery -A config beat -l info
 ```
 
-### Step 5 — ML Service (FastAPI)
-
-```bash
-cd ~/Desktop/ML-auditor/ml-service
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy and edit env
-cp .env.example .env
-# Edit .env — set NIM_API_KEY
-
-# Start the service
-uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-```
-
-ML Service is now at http://localhost:8001
-
-### Step 6 — Frontend (Next.js)
+### Step 5 — Frontend (Next.js)
 
 ```bash
 cd ~/Desktop/ML-auditor/frontend
@@ -172,21 +149,9 @@ Frontend is now at http://localhost:3000
 
 ---
 
-## Option C: One-Command (Root package.json)
-
-Uses `concurrently` to start Docker services and the frontend dev server together:
-
-```bash
-cd ~/Desktop/ML-auditor
-npm install
-npm run dev
-```
-
----
-
 ## Logging & Monitoring (ELK Stack)
 
-All services (Backend, ML Service, Frontend) write structured JSON logs.
+All services (Backend, Frontend) write structured JSON logs.
 Logs are stored in `logs/` and can be forwarded to Elasticsearch for
 visualization in Kibana.
 
@@ -195,7 +160,6 @@ visualization in Kibana.
 | Service | Log file | Written by |
 |---------|----------|------------|
 | Backend (Django) | `logs/backend/django.log` | Django JSON formatter + middleware |
-| ML Service (FastAPI) | `logs/ml-service/ml-service.log` | structlog + JSON file handler |
 | Frontend (Next.js) | `logs/frontend/frontend.log` | Frontend logger → `POST /api/logs/` |
 
 ### Log Entry Format
@@ -224,116 +188,115 @@ Every log entry is a JSON line with:
 | `@timestamp` | ISO 8601 timestamp |
 | `level` | `INFO`, `WARNING`, `ERROR`, `DEBUG` |
 | `message` | Human-readable log message |
-| `service` | `backend`, `ml-service`, or `frontend` |
-| `stack` | `django`, `fastapi`, or `nextjs` |
+| `service` | `backend` or `frontend` |
+| `stack` | `django` or `nextjs` |
 
 **Backend-specific fields:** `request_method`, `request_path`, `status_code`,
 `response_time`, `ip_address`, `user_id`, `user_email`, `exception`
 
-**ML-service-specific fields:** `agent_name`, `agent_action`, `nim_model`,
+**Backend AI-agent fields:** `agent_name`, `agent_action`, `nim_model`,
 `search_query`, `search_results_count`
 
 **Frontend-specific fields:** `endpoint`, `error_name`, `error_message`
 
-### Option 1: ELK with Docker (Recommended)
+### ELK Stack (Built into Docker Compose)
 
-Runs Elasticsearch, Logstash, and Kibana in containers.
+Elasticsearch, Logstash, Kibana, and Filebeat are already defined in `docker-compose.yml`. When you run `docker compose up`, all logging services start automatically.
 
-```bash
-# Start Elasticsearch
-sudo docker run -d --name mlauditor_elasticsearch \
-  -e discovery.type=single-node \
-  -e xpack.security.enabled=false \
-  -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
-  -p 9200:9200 \
-  docker.elastic.co/elasticsearch/elasticsearch:8.13.4
-
-# Start Logstash (reads from logs/ directory)
-sudo docker run -d --name mlauditor_logstash \
-  -e "LS_JAVA_OPTS=-Xms256m -Xmx256m" \
-  -v ~/Desktop/ML-auditor/docker/logstash/pipeline:/usr/share/logstash/pipeline:ro \
-  -v ~/Desktop/ML-auditor/logs:/var/log/ml-auditor:ro \
-  --network host \
-  -p 5044:5044 -p 9600:9600 \
-  docker.elastic.co/logstash/logstash:8.13.4
-
-# Start Kibana
-sudo docker run -d --name mlauditor_kibana \
-  --network host \
-  -e ELASTICSEARCH_HOSTS=http://127.0.0.1:9200 \
-  -p 5601:5601 \
-  docker.elastic.co/kibana/kibana:8.13.4
-```
-
-**Verify Elasticsearch is ready:**
-
-```bash
-curl http://localhost:9200/_cluster/health?pretty
-```
-
-**Wait 60-90 seconds** for Elasticsearch and Kibana to fully start.
-
-**Access Kibana:** http://localhost:5601
-
-### Option 2: ELK via Docker Compose (Full Stack)
-
-If you have `docker compose` installed, start everything at once:
+**Start everything (including ELK):**
 
 ```bash
 cd ~/Desktop/ML-auditor
-sudo docker compose up -d elasticsearch logstash kibana
+docker compose up -d
 ```
 
-This starts all ELK services with proper networking and health checks.
-
-### Option 3: Local Elasticsearch (No Docker)
-
-For systems where Docker is unavailable:
+**Or start only ELK services separately:**
 
 ```bash
-# Ubuntu/Debian
-wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-8.x.list
-sudo apt update && sudo apt install elasticsearch kibana
-sudo systemctl start elasticsearch
-sudo systemctl start kibana
+docker compose up -d elasticsearch logstash kibana filebeat
 ```
 
-Edit `/etc/elasticsearch/elasticsearch.yml` and add:
+**Verify everything is running:**
 
-```yaml
-discovery.type: single-node
-xpack.security.enabled: false
+```bash
+curl http://localhost:9200/_cluster/health?pretty   # Elasticsearch
+curl http://localhost:5601/api/status               # Kibana
+curl http://localhost:9600/_node/stats?pretty        # Logstash
 ```
 
-Edit `/etc/kibana/kibana.yml` and set:
+Wait 60-90 seconds for Elasticsearch and Kibana to fully initialize.
 
-```yaml
-elasticsearch.hosts: ["http://localhost:9200"]
+**Access Kibana:** http://localhost:5601
+
+### Setting Up Kibana
+
+#### Step 1 — Import pre-built saved objects
+
+```bash
+# Go to Kibana → Stack Management → Saved Objects → Import
+# Select: docker/kibana/saved-objects.ndjson
 ```
 
-### Setting Up Kibana Dashboards
+This imports 3 index patterns and 6 saved searches.
 
-1. Open http://localhost:5601
-2. Go to **Management → Stack Management → Index Patterns**
-3. Click **Create index pattern**
-4. Create patterns for each service:
-   - `ml-auditor-backend-*`
-   - `ml-auditor-ml-service-*`
-   - `ml-auditor-frontend-*`
-5. Set `@timestamp` as the time field
-6. Go to **Analytics → Discover**
-7. Select an index pattern and explore logs
+#### Step 2 — Explore logs
 
-**Quick query examples in Kibana (KQL):**
+Go to **Analytics → Discover** and select one of the index patterns:
+- `ml-auditor-backend-*` — Django backend logs
+- `ml-auditor-frontend-*` — Next.js frontend logs
+- `ml-auditor-tcp-ingest-*` — External logs via TCP
+
+#### Quick Kibana queries (KQL)
 
 ```
 service: backend
 level: ERROR
-service: ml-service AND message: agent
 service: frontend AND level: warn
 status_code >= 400
-message: login AND service: backend
+tags: auth
+event_type: http_request
+```
+
+### Live TCP Ingestion (for demos / teaching)
+
+Logstash listens on **TCP port 5000** for JSON log lines. This is perfect for:
+- Connecting new services to the logging pipeline
+- Classroom demos where students send logs from their own scripts
+- CI/CD pipelines emitting build logs
+
+```bash
+echo '{"message":"hello from my script","service":"demo","level":"INFO"}' | nc localhost 5000
+```
+
+The log appears instantly in Kibana under the `ml-auditor-tcp-ingest-*` index pattern.
+
+### Connecting a New Service to ELK
+
+Three options, from easiest to most integrated:
+
+**Option A — TCP (easiest, no setup):**
+```python
+import socket, json
+sock = socket.socket()
+sock.connect(("localhost", 5000))
+sock.sendall((json.dumps({"message": "hello", "service": "myapp"}) + "\n").encode())
+sock.close()
+```
+
+**Option B — Write JSON to a file (persistent):**
+```
+1. Create a log directory:  mkdir -p logs/my-service/
+2. Write JSON lines:        echo '{"message":"hello"}' >> logs/my-service/myapp.log
+3. Filebeat picks it up automatically (within 10 seconds)
+```
+
+**Option C — Via backend API (if Django is running):**
+```
+POST http://localhost:8000/api/logs/
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{"logs": [{"message": "hello", "level": "info"}]}
 ```
 
 ### Stopping ELK
@@ -350,9 +313,6 @@ Logs are plain JSON lines — you can read them directly:
 ```bash
 # Tail backend logs
 tail -f logs/backend/django.log | python3 -m json.tool
-
-# Tail ML service logs
-tail -f logs/ml-service/ml-service.log | python3 -m json.tool
 
 # Tail frontend logs
 tail -f logs/frontend/frontend.log | python3 -m json.tool
@@ -415,7 +375,6 @@ Creates:
 | `CANVA_CLIENT_ID` | Canva Connect API client ID | https://www.canva.com/developers |
 | `CANVA_CLIENT_SECRET` | Canva API client secret | https://www.canva.com/developers |
 | `SENTRY_DSN` | Sentry error tracking DSN | https://sentry.io |
-| `ML_SERVICE_URL` | ML microservice URL | Default: `http://localhost:8001` |
 
 The app works without optional keys — chat falls back to a static response, integrations show "Not connected".
 
@@ -436,7 +395,6 @@ npm run test        # Run frontend tests
 
 # Logs
 tail -f logs/backend/django.log       # Watch backend logs
-tail -f logs/ml-service/ml-service.log # Watch ML service logs
 tail -f logs/frontend/frontend.log     # Watch frontend logs
 grep '"level": "ERROR"' logs/backend/django.log  # Find errors
 

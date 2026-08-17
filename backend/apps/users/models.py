@@ -22,6 +22,11 @@ class User(AbstractUser):
     canva_access_token = models.TextField(blank=True, null=True)
     canva_refresh_token = models.TextField(blank=True, null=True)
 
+    # Jira (API token based)
+    jira_api_token = models.TextField(blank=True, default="")
+    jira_email = models.EmailField(blank=True, default="")
+    jira_site_url = models.CharField(max_length=255, blank=True, default="")
+
     # IMAP/SMTP email config (generic, any provider)
     email_provider = models.CharField(max_length=32, blank=True, default="custom")
     email_imap_host = models.CharField(max_length=255, blank=True, default="")
@@ -35,6 +40,23 @@ class User(AbstractUser):
     email_notifications = models.BooleanField(default=True)
     push_notifications = models.BooleanField(default=True)
     webhook_url = models.URLField(blank=True, null=True)
+
+    # Chat web tools (live search / fetch) — off until user activates
+    web_tools_enabled = models.BooleanField(default=False)
+
+    # Mock data (demo placeholder content) — off until user activates
+    mock_data_enabled = models.BooleanField(default=False)
+
+    # JOBchameleon OAuth2 email provider connexion flag (connexion only — no send)
+    jc_email_connected = models.BooleanField(default=False)
+    jc_email_provider = models.CharField(max_length=32, blank=True, default="")
+
+    # Real-verified connexion flags: only True after backend successfully
+    # logged into the upstream service. Decouples "credentials present" from
+    # "credentials actually work", which the UI was reporting as connected
+    # even when login was impossible (bad host, wrong password, stale token).
+    email_verified = models.BooleanField(default=False)
+    plaid_verified = models.BooleanField(default=False)
 
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)

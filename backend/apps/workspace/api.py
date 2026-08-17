@@ -7,14 +7,29 @@ from django.utils import timezone
 from ninja import Query, Router
 from ninja.errors import HttpError
 
-from .models import CalendarEvent, NewsArticle, NewsFeed, Task, Trigger, WorkspaceWidget
+from .models import (
+    CalendarEvent,
+    GeneratedDocument,
+    NewsArticle,
+    NewsFeed,
+    Note,
+    Task,
+    Trigger,
+    WorkspaceWidget,
+)
 from .schemas import (
     ArticleResponse,
     EventCreate,
     EventResponse,
     EventUpdate,
+    GeneratedDocumentResponse,
+    GeneratedDocumentUpdate,
     NewsFeedCreate,
     NewsFeedResponse,
+    NoteCreate,
+    NoteGenerateRequest,
+    NoteResponse,
+    NoteUpdate,
     TaskCreate,
     TaskResponse,
     TaskUpdate,
@@ -213,6 +228,46 @@ def delete_feed(request, feed_id: str):
         raise HttpError(404, "Feed not found")
 
 
+@router.post("/feeds/{feed_id}/scrape")
+def scrape_feed(request, feed_id: str):
+    """Manually trigger a scrape of a feed's articles now."""
+    from .tasks import _fetch_feed, _summarize_with_llm
+
+    try:
+        feed = NewsFeed.objects.get(id=feed_id, user=request.auth)
+    except NewsFeed.DoesNotExist:
+        raise HttpError(404, "Feed not found")
+
+    from django.utils import timezone
+
+    scraped = 0
+    try:
+        for article_data in _fetch_feed(feed):
+            if NewsArticle.objects.filter(url=article_data["url"]).exists():
+                continue
+            summary = article_data.get("summary") or ""
+            if feed.feed_type == "webpage" or not summary:
+                summary = _summarize_with_llm(
+                    article_data.get("title", ""), article_data.get("content", "")
+                )
+            NewsArticle.objects.create(
+                feed=feed,
+                title=article_data["title"],
+                url=article_data["url"],
+                content=article_data.get("content", ""),
+                summary=summary,
+                image_url=article_data.get("image_url", ""),
+                author=article_data.get("author", ""),
+                published_at=article_data.get("published_at"),
+            )
+            scraped += 1
+        feed.last_scraped = timezone.now()
+        feed.save()
+        return {"success": True, "scraped": scraped, "feed": feed.name}
+    except Exception as e:
+        raise HttpError(500, f"Scrape failed: {e}")
+
+
 @router.get("/feeds/{feed_id}/articles", response=list[ArticleResponse])
 def list_articles(request, feed_id: str, limit: int = Query(20)):
     """List articles from a feed."""
@@ -301,6 +356,203 @@ def delete_widget(request, widget_id: str):
         return {"success": True}
     except WorkspaceWidget.DoesNotExist:
         raise HttpError(404, "Widget not found")
+
+
+# ─── Notes ────────────────────────────────────────────────────────────
+
+
+@router.get("/notes", response=list[NoteResponse])
+def list_notes(
+    request,
+    format: str = Query(None),
+    tag: str = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(PAGE_SIZE, ge=1, le=100),
+):
+    """List notes for current user."""
+    qs = Note.objects.filter(user=request.auth)
+    if format:
+        qs = qs.filter(format=format)
+    if tag:
+        qs = qs.filter(tags__contains=tag)
+    offset = (page - 1) * page_size
+    return list(qs[offset : offset + page_size])
+
+
+@router.post("/notes", response=NoteResponse)
+def create_note(request, payload: NoteCreate):
+    """Create a new note."""
+    note = Note.objects.create(
+        user=request.auth,
+        **payload.dict(),
+    )
+    return note
+
+
+@router.get("/notes/{note_id}", response=NoteResponse)
+def get_note(request, note_id: str):
+    """Get note by ID."""
+    try:
+        return Note.objects.get(id=note_id, user=request.auth)
+    except Note.DoesNotExist:
+        raise HttpError(404, "Note not found")
+
+
+@router.put("/notes/{note_id}", response=NoteResponse)
+def update_note(request, note_id: str, payload: NoteUpdate):
+    """Update a note."""
+    try:
+        note = Note.objects.get(id=note_id, user=request.auth)
+        for field, value in payload.dict(exclude_unset=True).items():
+            setattr(note, field, value)
+        note.save()
+        return note
+    except Note.DoesNotExist:
+        raise HttpError(404, "Note not found")
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(request, note_id: str):
+    """Delete a note."""
+    try:
+        Note.objects.get(id=note_id, user=request.auth).delete()
+        return {"success": True}
+    except Note.DoesNotExist:
+        raise HttpError(404, "Note not found")
+
+
+@router.post("/notes/{note_id}/generate", response=GeneratedDocumentResponse)
+def generate_from_note(request, note_id: str, payload: NoteGenerateRequest):
+    """Generate a presentation/article from a note and save it as a document."""
+    try:
+        note = Note.objects.get(id=note_id, user=request.auth)
+    except Note.DoesNotExist:
+        raise HttpError(404, "Note not found")
+
+    file_format = _file_format_for(payload.target_format)
+    try:
+        content = _run_generation(note, payload.target_format, payload.style, payload.max_length)
+    except RuntimeError as exc:
+        raise HttpError(400, str(exc))
+
+    doc = GeneratedDocument.objects.create(
+        user=request.auth,
+        note=note,
+        title=note.title,
+        content=content,
+        doc_format=payload.target_format,
+        file_format=file_format,
+        style=payload.style,
+    )
+    return doc
+
+
+# ─── Generated Documents ────────────────────────────────────────────
+
+
+def _file_format_for(target_format: str) -> str:
+    if target_format == "presentation":
+        return "pptx"
+    return "docx"
+
+
+def _run_generation(note: Note, target_format: str, style: str, max_length: int | None = None) -> str:
+    """Generate the document content from the note via a direct LLM call.
+
+    Deliberately bypasses the agent graph: the agent treats ``organize_notes``
+    as a write tool that only gets *proposed* for confirmation, which made the
+    output a confirmation prompt instead of the actual document.
+    """
+    from apps.workspace.services.document_generation import generate_content
+
+    return generate_content(
+        note.user,
+        note.title,
+        note.content,
+        target_format,
+        style,
+        max_length,
+    )
+
+
+@router.get("/generated-documents", response=list[GeneratedDocumentResponse])
+def list_generated_documents(request, doc_format: str = ""):
+    """List the user's generated documents (presentations/articles)."""
+    qs = GeneratedDocument.objects.filter(user=request.auth).select_related("note")
+    if doc_format:
+        qs = qs.filter(doc_format=doc_format)
+    return list(qs)
+
+
+@router.get("/generated-documents/{doc_id}", response=GeneratedDocumentResponse)
+def get_generated_document(request, doc_id: str):
+    """Get a single generated document."""
+    doc = _get_doc(request, doc_id)
+    return doc
+
+
+@router.put("/generated-documents/{doc_id}", response=GeneratedDocumentResponse)
+def update_generated_document(request, doc_id: str, payload: GeneratedDocumentUpdate):
+    """Rename or restyle a generated document."""
+    doc = _get_doc(request, doc_id)
+    if payload.title is not None:
+        doc.title = payload.title
+    if payload.style is not None:
+        doc.style = payload.style
+    doc.save()
+    return doc
+
+
+@router.delete("/generated-documents/{doc_id}")
+def delete_generated_document(request, doc_id: str):
+    """Delete a generated document."""
+    doc = _get_doc(request, doc_id)
+    doc.delete()
+    return {"success": True}
+
+
+@router.post("/generated-documents/{doc_id}/regenerate", response=GeneratedDocumentResponse)
+def regenerate_generated_document(request, doc_id: str, payload: NoteGenerateRequest):
+    """Regenerate a document from its source note."""
+    doc = _get_doc(request, doc_id)
+    file_format = _file_format_for(payload.target_format)
+    content = _run_generation(doc.note, payload.target_format, payload.style, payload.max_length)
+    doc.content = content
+    doc.doc_format = payload.target_format
+    doc.file_format = file_format
+    doc.style = payload.style
+    doc.save()
+    return doc
+
+
+@router.get("/generated-documents/{doc_id}/download")
+def download_generated_document(request, doc_id: str, format: str = ""):
+    """Download a generated document as DOCX, PPTX or Markdown."""
+    from django.http import HttpResponse
+
+    from .services.document_generation import build_document_bytes, default_filename
+
+    doc = _get_doc(request, doc_id)
+    fmt = format or doc.file_format
+    if fmt not in ("docx", "pptx", "md"):
+        raise HttpError(400, "format must be docx, pptx or md")
+
+    content_type = {
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "md": "text/markdown; charset=utf-8",
+    }[fmt]
+    data = build_document_bytes(doc.title, doc.content, fmt)
+    response = HttpResponse(data, content_type=content_type)
+    response["Content-Disposition"] = f'attachment; filename="{default_filename(doc.title, fmt)}"'
+    return response
+
+
+def _get_doc(request, doc_id: str) -> GeneratedDocument:
+    try:
+        return GeneratedDocument.objects.select_related("note").get(id=doc_id, user=request.auth)
+    except GeneratedDocument.DoesNotExist:
+        raise HttpError(404, "Generated document not found")
 
 
 # ─── Triggers ────────────────────────────────────────────────────────

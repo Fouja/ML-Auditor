@@ -9,7 +9,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "=== ML-Auditor Database Seeding ==="
 
-docker compose -f "$PROJECT_DIR/docker-compose.prod.yml" exec -T backend python manage.py shell -c "
+docker compose -f "$PROJECT_DIR/docker-compose.yml" exec -T backend python manage.py shell -c "
 from django.contrib.auth import get_user_model
 from apps.workspace.models import Task, CalendarEvent
 from apps.integrations.models import IntegrationConnection

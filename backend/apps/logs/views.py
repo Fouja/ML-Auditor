@@ -11,8 +11,13 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-FRONTEND_LOG_DIR = (
-    Path(__file__).resolve().parent.parent.parent.parent / "logs" / "frontend"
+import os
+
+FRONTEND_LOG_DIR = Path(
+    os.environ.get(
+        "FRONTEND_LOG_DIR",
+        Path(__file__).resolve().parent.parent.parent.parent / "logs" / "frontend",
+    )
 )
 FRONTEND_LOG_DIR.mkdir(parents=True, exist_ok=True)
 

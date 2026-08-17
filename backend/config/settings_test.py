@@ -4,6 +4,7 @@ Uses SQLite for testing without external dependencies.
 """
 
 from datetime import timedelta
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -70,6 +71,15 @@ DATABASES = {
     }
 }
 
+# Override with a real Postgres URL to exercise the pgvector code path, e.g.:
+#   DJANGO_TEST_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
+# The whole test database is created/dropped by Django; the ``vector`` extension
+# is created by a migration so no manual DB setup is needed.
+if os.environ.get("DJANGO_TEST_DATABASE_URL"):
+    import environ
+
+    DATABASES["default"] = environ.Env().db("DJANGO_TEST_DATABASE_URL")
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
@@ -108,6 +118,11 @@ USE_TZ = True
 STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# NIM / LLM settings (from .env or defaults)
+NIM_API_KEY = ""
+NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NIM_MODEL = "meta/llama-3.1-8b-instruct"
 
 LOGGING = {
     "version": 1,

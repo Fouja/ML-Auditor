@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart3 } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,15 +32,20 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <BarChart3 className="h-6 w-6" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background bg-renaissance-animated p-4">
+      <div className="hud-grid pointer-events-none absolute inset-0 opacity-60" />
+      <Card className="arch panel-gilded relative z-10 w-full max-w-md">
+        <CardHeader className="space-y-1 pt-8 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-accent/40 bg-accent/10">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/foujalab.png" alt="FoujaLab logo" className="h-14 w-14 object-cover" />
           </div>
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
-          <CardDescription>
-            Sign in to your ML-Auditor account
+          <CardTitle className="font-brand text-2xl tracking-[0.15em] accent-text">
+            Argus <span className="text-sm font-normal tracking-normal opacity-80">ml-auditor</span>
+          </CardTitle>
+          <div className="accent-rule mx-auto mt-3 w-2/3" />
+          <CardDescription className="pt-2 font-display text-base italic">
+            Welcome back
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -74,13 +78,13 @@ export default function LoginPage() {
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col space-y-4">
-            <Button type="submit" className="w-full" disabled={isLoading}>
+          <CardFooter className="flex flex-col space-y-4 pb-8">
+            <Button type="submit" className="w-full accent-glow" disabled={isLoading}>
               {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
               Don&apos;t have an account?{' '}
-              <Link href="/signup" className="text-primary hover:underline">
+              <Link href="/signup" className="text-accent-400 hover:text-accent-300 hover:underline">
                 Sign up
               </Link>
             </p>

@@ -49,6 +49,90 @@ def list_alerts(
     )
 
 
+@router.get("/unified")
+def unified_alerts(request, limit: int = Query(50)):
+    """Combined feed of agent alerts + Jira issues (single notifications view)."""
+    from datetime import datetime, timezone as dt_timezone
+
+    items = []
+
+    for alert in AgentAlert.objects.filter(user=request.auth)[:limit]:
+        items.append(
+            {
+                "id": str(alert.id),
+                "source": "agent",
+                "title": alert.title,
+                "description": alert.description,
+                "severity": alert.severity,
+                "status": alert.status,
+                "created_at": alert.created_at.isoformat(),
+                "url": None,
+            }
+        )
+
+    jira_error = None
+    jira_connected = bool(request.auth.jira_site_url and request.auth.jira_api_token)
+    if jira_connected:
+        try:
+            from apps.users.services.jira_client import JiraClient
+
+            client = JiraClient(
+                site_url=request.auth.jira_site_url,
+                email=request.auth.jira_email,
+                api_token=request.auth.jira_api_token,
+            )
+            issues = client.get_issues(
+                jql='statusCategory != "Done" ORDER BY updated DESC',
+                max_results=limit,
+            )
+            for issue in issues:
+                items.append(
+                    {
+                        "id": issue["key"],
+                        "source": "jira",
+                        "title": f"[{issue['key']}] {issue['summary']}",
+                        "description": (issue.get("description") or "")[:500],
+                        "severity": _jira_priority(issue.get("priority", "")),
+                        "status": issue.get("status", ""),
+                        "created_at": issue.get("created", ""),
+                        "url": issue.get("url"),
+                    }
+                )
+        except Exception as e:
+            jira_error = str(e)
+
+    def _sort_key(item):
+        raw = item["created_at"]
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt_timezone.utc)
+            return parsed.timestamp()
+        except Exception:
+            return 0.0
+
+    items.sort(key=_sort_key, reverse=True)
+    return {
+        "items": items[:limit],
+        "total": len(items),
+        "jira_connected": jira_connected,
+        "jira_error": jira_error,
+    }
+
+
+def _jira_priority(priority: str) -> str:
+    if not priority:
+        return "medium"
+    p = priority.lower()
+    if p in ("highest", "high"):
+        return "high"
+    if p in ("lowest", "low"):
+        return "low"
+    if p == "critical":
+        return "critical"
+    return "medium"
+
+
 @router.get("/stats", response=AlertStats)
 def get_alert_stats(request):
     """Get alert statistics for current user."""

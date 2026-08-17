@@ -9,7 +9,13 @@ from ninja import Query, Router
 from ninja.errors import HttpError
 
 from .models import DocumentChunk
-from .schemas import DocumentChunkListResponse, DocumentChunkResponse, SearchResult
+from .schemas import (
+    DocumentChunkListResponse,
+    DocumentChunkResponse,
+    RagQuery,
+    RagResponse,
+    SearchResult,
+)
 
 router = Router()
 
@@ -79,6 +85,30 @@ def search_documents(request, payload: dict):
         )
 
     return results
+
+
+@router.post("/rag/query", response=RagResponse)
+def rag_query(request, payload: RagQuery):
+    """Vector RAG query over the user's document chunks.
+
+    Runs the modular RAG pipeline (pgvector ``<=>`` on Postgres, in-process
+    cosine on SQLite, keyword fallback) with optional source modules and a
+    grounded NIM answer.
+    """
+    from .services.rag.service import query_rag
+
+    result = query_rag(
+        request.auth,
+        payload.query,
+        sources=payload.sources,
+        categories=payload.categories,
+        limit=payload.limit,
+        min_score=payload.min_score,
+        answer=payload.answer,
+    )
+    if "error" in result:
+        raise HttpError(502, result["error"])
+    return RagResponse(**result)
 
 
 @router.delete("/{chunk_id}")

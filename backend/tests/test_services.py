@@ -137,6 +137,31 @@ class TestToolExecutor:
         assert result["success"] is True
         assert result["task_id"] == "test-uuid-123"
 
+    async def test_list_tasks_tool(self, user):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from apps.agents.services.tool_executor import ToolExecutor
+
+        executor = ToolExecutor(user)
+        mock_task = MagicMock()
+        mock_task.id = "test-uuid-456"
+        mock_task.title = "Listed Task"
+        mock_task.description = "A task to list"
+        mock_task.status = "todo"
+        mock_task.priority = "high"
+        mock_task.due_date = None
+        mock_task.tags = []
+        mock_task.position = 0
+        mock_task.created_at.isoformat.return_value = "2026-08-13T00:00:00+00:00"
+        mock_task.updated_at.isoformat.return_value = "2026-08-13T00:00:00+00:00"
+        with patch("apps.agents.services.tool_executor.sync_to_async") as mock_sync:
+            mock_sync.return_value = AsyncMock(return_value=[mock_task])
+            result = await executor.execute("list_tasks", {})
+        assert result["success"] is True
+        assert result["count"] == 1
+        assert result["tasks"][0]["id"] == "test-uuid-456"
+        assert result["tasks"][0]["title"] == "Listed Task"
+
     async def test_unknown_tool(self, user):
         from apps.agents.services.tool_executor import ToolExecutor
 

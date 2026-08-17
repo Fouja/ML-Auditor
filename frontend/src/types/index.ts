@@ -88,6 +88,7 @@ export interface IntegrationStatus {
   plaid: { connected: boolean };
   canva: { connected: boolean };
   kijiji: { connected: boolean };
+  jira: { connected: boolean };
 }
 
 export interface IntegrationConnection {

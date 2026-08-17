@@ -86,6 +86,44 @@ class KijijiSearchSchema(BaseModel):
     max_price: Optional[float] = None
 
 
+# ─── Jira ─────────────────────────────────────────────────────────────
+
+
+class JiraConfigureSchema(BaseModel):
+    site_url: str
+    email: str
+    api_token: str
+
+
+class JiraProjectSchema(BaseModel):
+    id: str
+    key: str
+    name: str
+    project_type_key: str
+    lead: str
+    avatar_url: str
+
+
+class JiraIssueSchema(BaseModel):
+    id: str
+    key: str
+    summary: str
+    status: str
+    priority: str
+    issue_type: str
+    assignee_display: str
+    created: str
+    updated: str
+    due_date: Optional[str] = None
+    url: str
+
+
+class JiraSyncSchema(BaseModel):
+    project_key: Optional[str] = None
+    jql: Optional[str] = None
+    max_results: int = 50
+
+
 # ─── LLM Configuration ──────────────────────────────────────────────
 
 

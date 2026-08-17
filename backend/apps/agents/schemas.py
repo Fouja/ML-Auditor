@@ -12,6 +12,10 @@ class AgentMessage(Schema):
 
     content: str
     agent_type: Optional[str] = "general"
+    creativity: Optional[int] = None
+    creativity_level: Optional[str] = None
+    context_depth: Optional[int] = None
+    token_budget: Optional[int] = None
 
 
 class AgentResponse(Schema):
@@ -20,6 +24,8 @@ class AgentResponse(Schema):
     response: str
     agent_type: str
     actions_taken: List[Dict[str, Any]] = []
+    tool_calls: List[Dict[str, Any]] = []
+    pending_actions: List[Dict[str, Any]] = []
     metadata: Optional[Dict[str, Any]] = None
 
 

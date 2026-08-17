@@ -4,44 +4,45 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --background: 42 40% 97%;
+    --foreground: 222 45% 10%;
+    --card: 40 50% 99%;
+    --card-foreground: 222 45% 10%;
+    --primary: 164 60% 44%;
+    --primary-foreground: 222 45% 6%;
+    --secondary: 165 30% 90%;
+    --secondary-foreground: 222 35% 12%;
+    --muted: 40 28% 91%;
+    --muted-foreground: 165 20% 40%;
+    --accent: 164 45% 86%;
+    --accent-foreground: 222 35% 14%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 40 25% 84%;
+    --input: 40 25% 84%;
+    --ring: 164 60% 44%;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --background: 222 45% 4%;
+    --foreground: 42 30% 94%;
+    --card: 220 40% 6%;
+    --card-foreground: 42 30% 94%;
+    --primary: 164 60% 48%;
+    --primary-foreground: 222 45% 6%;
+    --secondary: 165 30% 12%;
+    --secondary-foreground: 165 30% 90%;
+    --muted: 222 30% 11%;
+    --muted-foreground: 165 18% 64%;
+    --accent: 164 45% 14%;
+    --accent-foreground: 165 70% 85%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --border: 222 28% 15%;
+    --input: 222 28% 15%;
+    --ring: 164 60% 48%;
+    --radius: 0.5rem;
   }
 }
 
@@ -49,7 +50,141 @@
   * {
     @apply border-border;
   }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: 'liga' 1, 'calt' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: hsl(164 60% 48% / 0.35);
+    color: hsl(42 30% 96%);
+  }
+}
+
+@layer utilities {
+  /* Renaissance × transhumanism backdrop: ink field, teal + blue auras */
+  .bg-renaissance {
+    background:
+      radial-gradient(70rem 45rem at 12% -12%, hsl(164 70% 42% / 0.10), transparent 55%),
+      radial-gradient(55rem 40rem at 108% 12%, hsl(199 70% 45% / 0.08), transparent 55%),
+      radial-gradient(45rem 32rem at 50% 120%, hsl(175 60% 42% / 0.05), transparent 60%),
+      hsl(var(--background));
+  }
+  .dark .bg-renaissance {
+    background:
+      radial-gradient(70rem 45rem at 12% -12%, hsl(164 70% 50% / 0.12), transparent 55%),
+      radial-gradient(55rem 40rem at 108% 12%, hsl(199 80% 55% / 0.10), transparent 55%),
+      radial-gradient(45rem 32rem at 50% 120%, hsl(175 60% 45% / 0.06), transparent 60%),
+      hsl(var(--background));
+  }
+  .bg-renaissance-animated {
+    background:
+      radial-gradient(70rem 45rem at 12% -12%, hsl(164 70% 42% / 0.12), transparent 55%),
+      radial-gradient(55rem 40rem at 108% 12%, hsl(199 70% 45% / 0.10), transparent 55%),
+      radial-gradient(45rem 32rem at 50% 120%, hsl(175 60% 42% / 0.06), transparent 60%),
+      hsl(var(--background));
+    background-size: 200% 200%;
+    animation: aurora-shift 22s ease-in-out infinite;
+  }
+  .dark .bg-renaissance-animated {
+    background:
+      radial-gradient(70rem 45rem at 12% -12%, hsl(164 70% 50% / 0.12), transparent 55%),
+      radial-gradient(55rem 40rem at 108% 12%, hsl(199 80% 55% / 0.14), transparent 55%),
+      radial-gradient(45rem 32rem at 50% 120%, hsl(175 60% 45% / 0.08), transparent 60%),
+      hsl(var(--background));
+  }
+
+  /* Teal→blue foil text for brand & display headings */
+  .accent-text {
+    background: linear-gradient(
+      115deg,
+      #8ef5d0 0%,
+      #34d399 28%,
+      #0f9b8e 55%,
+      #38bdf8 78%,
+      #34d399 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Hairline teal divider (renaissance rule) */
+  .accent-rule {
+    height: 1px;
+    border: 0;
+    background: linear-gradient(90deg, transparent, hsl(164 60% 48% / 0.55), transparent);
+  }
+
+  /* Soft teal halo around primary actions */
+  .accent-glow {
+    box-shadow:
+      0 0 0 1px hsl(164 60% 48% / 0.3),
+      0 10px 34px -12px hsl(164 60% 48% / 0.4);
+  }
+  .accent-glow:hover {
+    box-shadow:
+      0 0 0 1px hsl(164 60% 48% / 0.5),
+      0 12px 40px -10px hsl(164 60% 48% / 0.55);
+  }
+
+  /* Gilded panel: dark glass with a teal edge */
+  .panel-gilded {
+    border: 1px solid hsl(164 60% 48% / 0.18);
+    background: linear-gradient(
+      180deg,
+      hsl(42 50% 96% / 0.85),
+      hsl(42 40% 92% / 0.95)
+    );
+    backdrop-filter: blur(8px);
+  }
+  .dark .panel-gilded {
+    border: 1px solid hsl(164 60% 48% / 0.18);
+    background: linear-gradient(
+      180deg,
+      hsl(220 40% 7% / 0.85),
+      hsl(222 45% 5% / 0.95)
+    );
+    backdrop-filter: blur(8px);
+  }
+
+  /* Arched (renaissance arch) top corners */
+  .arch {
+    border-radius: 999px 999px var(--radius) var(--radius);
+  }
+
+  /* Faint scanned-grid for the transhumanist layer */
+  .hud-grid {
+    background-image:
+      linear-gradient(hsl(164 60% 48% / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(164 60% 48% / 0.05) 1px, transparent 1px);
+    background-size: 42px 42px;
+  }
+
+  /* Shimmer skeleton */
+  .shimmer {
+    background: linear-gradient(
+      110deg,
+      hsl(var(--muted)) 8%,
+      hsl(var(--muted) / 0.4) 18%,
+      hsl(var(--muted)) 33%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s linear infinite;
+  }
+}
+
+@keyframes aurora-shift {
+  0%, 100% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
   }
 }

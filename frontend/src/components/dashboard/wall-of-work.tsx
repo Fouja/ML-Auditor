@@ -5,8 +5,22 @@ import api from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Plus, GripVertical, Calendar, Tag, MoreHorizontal, Trash2, ArrowRight, Clock, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
+import { Plus, MoreHorizontal, Calendar, Tag, Trash2, ArrowRight, AlertTriangle } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -33,6 +47,13 @@ const PRIORITY_COLORS: Record<string, string> = {
   critical: 'bg-red-100 text-red-700 border-red-200',
 };
 
+const PRIORITY_DOTS: Record<string, string> = {
+  low: 'bg-slate-400',
+  medium: 'bg-blue-500',
+  high: 'bg-orange-500',
+  critical: 'bg-red-500',
+};
+
 const PRIORITY_OPTIONS = ['low', 'medium', 'high', 'critical'];
 
 export function WallOfWork() {
@@ -42,14 +63,12 @@ export function WallOfWork() {
   const [loading, setLoading] = useState(true);
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  const [editingTask, setEditingTask] = useState<string | null>(null);
-  const [editPriority, setEditPriority] = useState('medium');
 
   useEffect(() => {
     fetchTasks();
   }, []);
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     try {
       const response = await api.get('/workspace/tasks');
       setTasks(response.data);
@@ -58,7 +77,7 @@ export function WallOfWork() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleAddTask = async (status: string) => {
     if (!newTaskTitle.trim()) return;
@@ -95,7 +114,6 @@ export function WallOfWork() {
       setTasks(prev => prev.map(t =>
         t.id === taskId ? { ...t, priority } : t
       ));
-      setEditingTask(null);
     } catch (error) {
       console.error('Failed to update task:', error);
     }
@@ -110,23 +128,17 @@ export function WallOfWork() {
     }
   };
 
-  const handleDragStart = (taskId: string) => {
-    setDraggedTask(taskId);
-  };
+  const handleDragStart = (taskId: string) => setDraggedTask(taskId);
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
     setDragOverColumn(columnId);
   };
 
-  const handleDragLeave = () => {
-    setDragOverColumn(null);
-  };
+  const handleDragLeave = () => setDragOverColumn(null);
 
   const handleDrop = (columnId: string) => {
-    if (draggedTask) {
-      handleMoveTask(draggedTask, columnId);
-    }
+    if (draggedTask) handleMoveTask(draggedTask, columnId);
     setDraggedTask(null);
     setDragOverColumn(null);
   };
@@ -134,20 +146,18 @@ export function WallOfWork() {
   const getTasksByStatus = (status: string) =>
     tasks.filter(t => t.status === status).sort((a, b) => a.position - b.position);
 
-  const getStats = () => ({
+  const stats = {
     total: tasks.length,
     todo: getTasksByStatus('todo').length,
     in_progress: getTasksByStatus('in_progress').length,
     review: getTasksByStatus('review').length,
     done: getTasksByStatus('done').length,
     overdue: tasks.filter(t => t.due_date && new Date(t.due_date) < new Date() && t.status !== 'done').length,
-  });
+  };
 
   if (loading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading tasks...</div>;
   }
-
-  const stats = getStats();
 
   return (
     <div className="flex flex-col h-full">
@@ -158,7 +168,7 @@ export function WallOfWork() {
         <span>{stats.review} in review</span>
         <span>{stats.done} done</span>
         {stats.overdue > 0 && (
-          <span className="text-orange-600 flex items-center gap-1">
+          <span className="text-destructive flex items-center gap-1 font-medium">
             <AlertTriangle className="h-3 w-3" />
             {stats.overdue} overdue
           </span>
@@ -170,15 +180,16 @@ export function WallOfWork() {
         {COLUMNS.map(column => (
           <div
             key={column.id}
-            className={`flex-1 min-w-[220px] ${
-              dragOverColumn === column.id ? 'bg-muted/50 rounded-lg' : ''
-            }`}
+            className={cn(
+              'flex-1 min-w-[220px] rounded-xl transition-colors',
+              dragOverColumn === column.id && 'bg-accent/60 ring-1 ring-accent'
+            )}
             onDragOver={(e) => handleDragOver(e, column.id)}
             onDragLeave={handleDragLeave}
             onDrop={() => handleDrop(column.id)}
           >
             <div className="flex items-center gap-2 mb-2 px-1">
-              <div className={`w-2 h-2 rounded-full ${column.color}`} />
+              <div className={cn('w-2 h-2 rounded-full', column.color)} />
               <span className="text-sm font-medium">{column.title}</span>
               <span className="text-xs text-muted-foreground bg-muted px-1.5 rounded-full">
                 {getTasksByStatus(column.id).length}
@@ -195,16 +206,12 @@ export function WallOfWork() {
                   onMove={handleMoveTask}
                   onDelete={handleDeleteTask}
                   onEditPriority={handleUpdatePriority}
-                  isEditing={editingTask === task.id}
-                  onToggleEdit={() => setEditingTask(editingTask === task.id ? null : task.id)}
-                  editPriority={editPriority}
-                  onEditPriorityChange={setEditPriority}
                   isDragging={draggedTask === task.id}
                 />
               ))}
 
               {addingToColumn === column.id ? (
-                <div className="space-y-2">
+                <div className="space-y-2 animate-fade-in">
                   <Input
                     value={newTaskTitle}
                     onChange={(e) => setNewTaskTitle(e.target.value)}
@@ -229,7 +236,7 @@ export function WallOfWork() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start text-muted-foreground"
+                  className="w-full justify-start text-muted-foreground hover:text-foreground"
                   onClick={() => setAddingToColumn(column.id)}
                 >
                   <Plus className="h-4 w-4 mr-1" />
@@ -251,10 +258,6 @@ function TaskCard({
   onMove,
   onDelete,
   onEditPriority,
-  isEditing,
-  onToggleEdit,
-  editPriority,
-  onEditPriorityChange,
   isDragging,
 }: {
   task: Task;
@@ -263,21 +266,18 @@ function TaskCard({
   onMove: (id: string, status: string) => void;
   onDelete: (id: string) => void;
   onEditPriority: (id: string, priority: string) => void;
-  isEditing: boolean;
-  onToggleEdit: () => void;
-  editPriority: string;
-  onEditPriorityChange: (p: string) => void;
   isDragging: boolean;
 }) {
-  const [showMenu, setShowMenu] = useState(false);
-
   const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
 
   return (
     <Card
-      className={`cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${
-        isDragging ? 'opacity-50 scale-95' : ''
-      } ${isOverdue ? 'border-orange-300' : ''}`}
+      className={cn(
+        'cursor-grab active:cursor-grabbing hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/30',
+        'transition-all duration-200 animate-fade-in-up',
+        isDragging && 'opacity-50 scale-95 shadow-xl rotate-2',
+        isOverdue && 'border-destructive/50'
+      )}
       draggable
       onDragStart={() => onDragStart(task.id)}
       onDragEnd={onDragEnd}
@@ -292,65 +292,68 @@ function TaskCard({
               </p>
             )}
           </div>
-          <div className="relative">
-            <button
-              onClick={onToggleEdit}
-              className="p-1 hover:bg-muted rounded"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-            {isEditing && (
-              <div className="absolute right-0 top-8 z-10 bg-popover border rounded-md shadow-lg py-2 min-w-[140px]">
-                <p className="px-3 text-xs font-medium text-muted-foreground mb-1">Priority</p>
-                <div className="px-2 flex flex-wrap gap-1">
-                  {PRIORITY_OPTIONS.map(p => (
-                    <button
-                      key={p}
-                      className={`px-2 py-0.5 text-xs rounded border ${
-                        task.priority === p ? 'ring-2 ring-primary' : ''
-                      } ${PRIORITY_COLORS[p]}`}
-                      onClick={() => onEditPriority(task.id, p)}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-                <hr className="my-2" />
-                {COLUMNS.filter(c => c.id !== task.status).map(column => (
-                  <button
-                    key={column.id}
-                    className="w-full px-3 py-1 text-sm text-left hover:bg-muted flex items-center gap-2"
-                    onClick={() => {
-                      onMove(task.id, column.id);
-                      onToggleEdit();
-                    }}
-                  >
-                    <ArrowRight className="h-3 w-3" />
-                    Move to {column.title}
-                  </button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1.5 hover:bg-accent hover:text-accent-foreground rounded-lg transition-colors outline-none focus-visible:ring-2 ring-ring"
+                aria-label="Task actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>Priority</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={task.priority}
+                onValueChange={(value) => onEditPriority(task.id, value)}
+              >
+                {PRIORITY_OPTIONS.map(p => (
+                  <DropdownMenuRadioItem key={p} value={p} className="capitalize gap-2">
+                    <span className={cn('h-1.5 w-1.5 rounded-full', PRIORITY_DOTS[p])} />
+                    {p}
+                  </DropdownMenuRadioItem>
                 ))}
-                <hr className="my-1" />
-                <button
-                  className="w-full px-3 py-1 text-sm text-left text-destructive hover:bg-destructive/10 flex items-center gap-2"
-                  onClick={() => {
-                    onDelete(task.id);
-                    onToggleEdit();
-                  }}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Delete
-                </button>
-              </div>
-            )}
-          </div>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <ArrowRight className="h-4 w-4" />
+                  Move to
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {COLUMNS.filter(c => c.id !== task.status).map(column => (
+                    <DropdownMenuItem
+                      key={column.id}
+                      onClick={() => onMove(task.id, column.id)}
+                    >
+                      <span className={cn('h-1.5 w-1.5 rounded-full', column.color)} />
+                      {column.title}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                onClick={() => onDelete(task.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <span className={`text-xs px-2 py-0.5 rounded-full border ${PRIORITY_COLORS[task.priority]}`}>
+          <Badge variant="outline" className={cn('capitalize', PRIORITY_COLORS[task.priority])}>
             {task.priority}
-          </span>
+          </Badge>
           {task.due_date && (
-            <span className={`text-xs flex items-center gap-1 ${isOverdue ? 'text-orange-600 font-medium' : 'text-muted-foreground'}`}>
+            <span className={cn(
+              'text-xs flex items-center gap-1',
+              isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground'
+            )}>
               <Calendar className="h-3 w-3" />
               {new Date(task.due_date).toLocaleDateString()}
               {isOverdue && ' (overdue)'}

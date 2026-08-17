@@ -2,6 +2,8 @@ import uuid
 
 from django.db import models
 
+from .fields import EmbeddingVectorField
+
 
 class DocumentChunk(models.Model):
     """
@@ -16,6 +18,26 @@ class DocumentChunk(models.Model):
         ("kijiji_deal", "Kijiji Deal"),
         ("calendar", "Calendar"),
         ("general", "General"),
+        ("jira", "Jira"),
+        ("social", "Social"),
+        ("job_alert", "Job Alert"),
+        ("job_event", "Job Event"),
+        ("networking", "Networking"),
+        ("receipt", "Receipt"),
+        ("security", "Security"),
+        ("newsletter", "Newsletter"),
+        ("project_idea", "Project Idea"),
+        ("job_offer", "Job Offer"),
+        ("job_rejection", "Job Rejection"),
+        ("job_interview", "Job Interview"),
+        ("subscription", "Subscription"),
+        ("shipping", "Shipping"),
+        ("marketing", "Marketing"),
+        ("survey", "Survey"),
+        ("travel", "Travel"),
+        ("meeting", "Meeting"),
+        ("legal", "Legal"),
+        ("document", "Document"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -25,8 +47,11 @@ class DocumentChunk(models.Model):
         related_name="document_chunks",
     )
     content = models.TextField()
-    embedding = models.JSONField(
-        help_text="Vector embedding for semantic search (384 dimensions)"
+    embedding = EmbeddingVectorField(
+        dimensions=1024,
+        null=True,
+        blank=True,
+        help_text="pgvector embedding for semantic search (1024 dimensions)",
     )
     cluster_category = models.CharField(
         max_length=100,

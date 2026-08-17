@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlauditor-frontend
+  namespace: mlauditor
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mlauditor-frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: mlauditor-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: mlauditor/frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://mlauditor.com"
+            - name: NEXT_PUBLIC_WS_URL
+              value: "wss://mlauditor.com"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlauditor-frontend
+  namespace: mlauditor
+spec:
+  selector:
+    app: mlauditor-frontend
+  ports:
+    - port: 3000
+      targetPort: 3000

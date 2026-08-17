@@ -1,14 +1,15 @@
 import LLMConfiguration from '@/components/LLMConfiguration';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
 
 export const metadata = {
-  title: 'Configuration des LLMs | ML-Auditor',
-  description: 'Configurer et gérer vos modèles de langage (LLM)',
+  title: 'LLM Configuration | Argus',
+  description: 'Configure and manage your language models (LLM)',
 };
 
 export default function LLMConfigPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <DashboardLayout>
       <LLMConfiguration />
-    </div>
+    </DashboardLayout>
   );
 }

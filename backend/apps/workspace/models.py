@@ -145,6 +145,7 @@ class NewsArticle(models.Model):
     url = models.URLField()
     content = models.TextField(blank=True, default="")
     summary = models.TextField(blank=True, default="")
+    image_url = models.URLField(blank=True, default="")
     author = models.CharField(max_length=255, blank=True, default="")
     published_at = models.DateTimeField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
@@ -200,6 +201,44 @@ class WorkspaceWidget(models.Model):
         return f"{self.title} ({self.widget_type})"
 
 
+class Note(models.Model):
+    """Personal notes — writing, book chapters, presentations, etc."""
+
+    class Format(models.TextChoices):
+        NOTE = "note", "Note"
+        BOOK_CHAPTER = "book_chapter", "Book Chapter"
+        PRESENTATION = "presentation", "Presentation"
+        ARTICLE = "article", "Article"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="workspace_notes",
+    )
+    title = models.CharField(max_length=500)
+    content = models.TextField(blank=True, default="")
+    format = models.CharField(
+        max_length=30,
+        choices=Format.choices,
+        default=Format.NOTE,
+    )
+    tags = models.JSONField(default=list, blank=True)
+    is_pinned = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_pinned", "-updated_at"]
+        indexes = [
+            models.Index(fields=["user", "format"]),
+            models.Index(fields=["user", "is_pinned"]),
+        ]
+
+    def __str__(self):
+        return f"[{self.format}] {self.title}"
+
+
 class Trigger(models.Model):
     """Trigger / reminder system."""
 
@@ -241,3 +280,52 @@ class Trigger(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.trigger_type})"
+
+
+class GeneratedDocument(models.Model):
+    """Documents generated from notes — presentations (PPTX), articles (DOCX)."""
+
+    class DocFormat(models.TextChoices):
+        PRESENTATION = "presentation", "Presentation"
+        ARTICLE = "article", "Article"
+
+    class FileFormat(models.TextChoices):
+        DOCX = "docx", "Word (DOCX)"
+        PPTX = "pptx", "PowerPoint (PPTX)"
+        MD = "md", "Markdown"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="workspace_generated_documents",
+    )
+    note = models.ForeignKey(
+        Note,
+        on_delete=models.CASCADE,
+        related_name="generated_documents",
+    )
+    title = models.CharField(max_length=500)
+    content = models.TextField(blank=True, default="")
+    doc_format = models.CharField(
+        max_length=30,
+        choices=DocFormat.choices,
+        default=DocFormat.PRESENTATION,
+    )
+    file_format = models.CharField(
+        max_length=10,
+        choices=FileFormat.choices,
+        default=FileFormat.PPTX,
+    )
+    style = models.CharField(max_length=30, default="professional")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["user", "doc_format"]),
+        ]
+
+    def __str__(self):
+        return self.title

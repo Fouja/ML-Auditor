@@ -7,6 +7,8 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from config.security import decrypt_secret, encrypt_secret, is_encrypted
+
 
 class IntegrationConnection(models.Model):
     """Tracks an external service connection for a user."""
@@ -16,6 +18,7 @@ class IntegrationConnection(models.Model):
         ("google_calendar", "Google Calendar"),
         ("plaid", "Plaid (Banking)"),
         ("kijiji", "Kijiji"),
+        ("jira", "Jira"),
     ]
     STATUS_CHOICES = [
         ("active", "Active"),
@@ -78,6 +81,13 @@ class LLMConfiguration(models.Model):
         ("nvidia", "NVIDIA NIM"),
         ("ollama", "Ollama (Local)"),
         ("huggingface", "Hugging Face"),
+        ("groq", "Groq (Free)"),
+        ("openrouter", "OpenRouter (Free models)"),
+        ("mistral", "Mistral AI"),
+        ("gemini", "Google Gemini (Free)"),
+        ("deepseek", "DeepSeek"),
+        ("together", "Together AI"),
+        ("lmstudio", "LM Studio (Local)"),
         ("custom", "Custom API"),
     ]
 
@@ -87,12 +97,22 @@ class LLMConfiguration(models.Model):
     )
     provider = models.CharField(max_length=50, choices=LLM_PROVIDERS)
     name = models.CharField(max_length=255)
-    api_key = models.CharField(max_length=500)
+    api_key = models.CharField(max_length=1000)  # Encrypted at rest (enc::...)
     api_endpoint = models.URLField(blank=True, null=True)
     model_name = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.api_key and not is_encrypted(self.api_key):
+            self.api_key = encrypt_secret(self.api_key)
+        super().save(*args, **kwargs)
+
+    @property
+    def decrypted_api_key(self) -> str:
+        """Plaintext key for outbound API calls. Never serialize this."""
+        return decrypt_secret(self.api_key)
 
     class Meta:
         ordering = ["-created_at"]

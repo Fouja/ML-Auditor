@@ -36,13 +36,16 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
-### ML Service
+### MCP Server (optional)
+
+The agent tools are exposed over MCP for any LLM client:
 
 ```bash
-cd ml-service
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8001
+cd backend
+python -m apps.agents.mcp_server --http --port 8100
 ```
+
+Or over stdio: `python -m apps.agents.mcp_server`.
 
 ## Development Workflow
 
