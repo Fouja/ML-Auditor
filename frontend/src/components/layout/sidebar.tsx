@@ -19,6 +19,7 @@ import {
   Home,
   Moon,
   Sun,
+  Monitor,
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -51,6 +52,7 @@ export function Sidebar() {
     { name: 'Generated', href: '/dashboard/generated', icon: FileDown },
     { name: 'Alerts & Notifications', href: '/dashboard/notifications', icon: Bell },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+    { name: 'Desktop App', href: '/desktop', icon: Monitor },
   ];
 
   const isActive = (href: string) =>

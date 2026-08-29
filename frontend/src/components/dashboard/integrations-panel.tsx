@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { isDesktopMode } from '@/lib/desktop';
 import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   IntegrationStatus,
+  IntegrationAccount,
   CalendarEvent,
   PlaidAccount,
   PlaidTransaction,
@@ -236,9 +238,10 @@ function EmailSection() {
 
 // ─── Gmail (Google API) ─────────────────────────────────────────────
 
-function GmailSection({ connected }: { connected: boolean }) {
+function GmailSection({ connected, accounts }: { connected: boolean; accounts: IntegrationAccount[] }) {
   const queryClient = useQueryClient();
-  const [syncing, setSyncing] = useState(false);
+  const [syncingAll, setSyncingAll] = useState(false);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const { data: clusterData, isLoading: clustersLoading } = useQuery({
     queryKey: ['emailClusters'],
@@ -250,47 +253,101 @@ function GmailSection({ connected }: { connected: boolean }) {
     retry: false,
   });
 
+  const syncAccount = async (connectionId: string, silent = false) => {
+    setSyncingId(connectionId);
+    try {
+      const res = await api.post(`/integrations/accounts/${connectionId}/sync`);
+      queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
+      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+      if (!silent) {
+        toast({ title: 'Gmail sync queued', description: 'Sync job started for selected account.', variant: 'success' });
+      }
+      return res.data;
+    } catch {
+      if (!silent) toast({ title: 'Sync failed', description: 'Could not sync Gmail account', variant: 'error' });
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
   const syncClusters = async (silent = false) => {
-    setSyncing(true);
+    setSyncingAll(true);
     try {
       const res = await api.post('/integrations/gmail/sync-clusters');
       queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
       queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
-      const indexed = (res.data as { indexed?: number })?.indexed ?? 0;
-      const synced = (res.data as { synced?: number })?.synced ?? 0;
-      if (!silent && (indexed > 0 || synced > 0)) {
-        toast({ title: 'Gmail synced', description: `${synced} messages indexed into clusters`, variant: 'success' });
+      const totalSynced = (res.data as { total_synced?: number })?.total_synced ?? 0;
+      if (!silent && totalSynced > 0) {
+        toast({ title: 'Gmail synced', description: `${totalSynced} messages indexed into clusters`, variant: 'success' });
       }
     } catch {
       if (!silent) toast({ title: 'Sync failed', description: 'Could not sync Gmail clusters', variant: 'error' });
     } finally {
-      setSyncing(false);
+      setSyncingAll(false);
+    }
+  };
+
+  const disconnectAccount = async (connectionId: string) => {
+    try {
+      await api.delete(`/integrations/accounts/${connectionId}`);
+      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+      toast({ title: 'Account disconnected', description: 'Gmail account removed.', variant: 'success' });
+    } catch {
+      toast({ title: 'Error', description: 'Failed to disconnect account', variant: 'error' });
     }
   };
 
   useEffect(() => {
-    if (connected) {
+    if (connected && accounts.length > 0) {
       syncClusters(true);
     }
-  }, [connected]);
+  }, [connected, accounts.length]);
+
+  const connectOAuth = async () => {
+    const res = await api.get('/integrations/oauth/google');
+    window.location.href = res.data.url;
+  };
 
   return (
     <IntegrationCard title="Gmail (OAuth2)" description="One-click Google OAuth — syncs mail into dashboard clusters" connected={connected} icon="📧">
       {connected ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-muted-foreground">Email clusters</p>
-            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={syncing} onClick={() => syncClusters(false)}>
-              {syncing ? 'Syncing…' : 'Sync Gmail'}
+            <p className="text-xs font-medium text-muted-foreground">{accounts.length} account(s)</p>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={syncingAll} onClick={() => syncClusters(false)}>
+              {syncingAll ? 'Syncing…' : 'Sync all Gmail'}
             </Button>
           </div>
+
+          {accounts.length > 0 && (
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {accounts.map((acc) => (
+                <div key={acc.id} className="flex items-center justify-between border rounded p-1.5 text-sm">
+                  <span className="truncate max-w-[140px]" title={acc.label}>{acc.label}</span>
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={syncingId === acc.id} onClick={() => syncAccount(acc.id)}>
+                      {syncingId === acc.id ? '…' : 'Sync'}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive" onClick={() => disconnectAccount(acc.id)}>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Button size="sm" variant="outline" className="w-full h-8 text-xs" onClick={connectOAuth}>
+            + Add another Gmail account
+          </Button>
+
           {clustersLoading ? (
             <p className="text-sm text-muted-foreground">Loading clusters…</p>
           ) : (clusterData?.clusters ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No clusters yet. Click “Sync Gmail” to index your inbox — Argus will then be able to answer mail questions.</p>
+            <p className="text-sm text-muted-foreground">No clusters yet. Click “Sync all Gmail” to index your inboxes — Argus will then be able to answer mail questions.</p>
           ) : (
-            <div className="space-y-1.5 max-h-52 overflow-y-auto">
-              {(clusterData?.clusters ?? []).slice(0, 12).map((c) => (
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {(clusterData?.clusters ?? []).slice(0, 10).map((c) => (
                 <div key={c.category} className="flex items-center justify-between border rounded p-1.5 text-sm">
                   <span className="capitalize">{c.label}</span>
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{c.count}</span>
@@ -302,7 +359,7 @@ function GmailSection({ connected }: { connected: boolean }) {
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            Connect Gmail with OAuth2 so Argus can retrieve mail, build email clusters, and answer questions about your inbox.
+            Connect one or more Gmail accounts with OAuth2 so Argus can retrieve mail, build email clusters, and answer questions about your inboxes.
           </p>
           <div className="rounded border border-slate-300 bg-slate-50 dark:bg-slate-800/60 p-2 text-xs text-muted-foreground space-y-1">
             <p>If you see <code className="font-mono">access_denied</code> or <code className="font-mono">redirect_uri_mismatch</code>, in the Google Cloud console (APIs &amp; Services → Credentials → OAuth 2.0 Web client):</p>
@@ -311,7 +368,7 @@ function GmailSection({ connected }: { connected: boolean }) {
             <code className="font-mono text-[11px] break-all">{'http://localhost:8000/api/integrations/oauth/google/callback'}</code>
             <p>3) Enable the Gmail + Calendar APIs in the same project.</p>
           </div>
-          <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/google'); window.location.href = res.data.url; }}>Connect with Google OAuth2</Button>
+          <Button size="sm" onClick={connectOAuth}>Connect with Google OAuth2</Button>
         </div>
       )}
     </IntegrationCard>
@@ -383,8 +440,9 @@ function CalendarSection({ connected }: { connected: boolean }) {
 
 // ─── Plaid (Banking) ────────────────────────────────────────────────
 
-function PlaidSection({ connected }: { connected: boolean }) {
+function PlaidSection({ connected, accounts }: { connected: boolean; accounts: IntegrationAccount[] }) {
   const queryClient = useQueryClient();
+  const [linking, setLinking] = useState(false);
 
   const { data: plaidMode } = useQuery({
     queryKey: ['plaidMode'],
@@ -397,19 +455,20 @@ function PlaidSection({ connected }: { connected: boolean }) {
 
   const { data: accountData, isLoading: accountsLoading } = useQuery({
     queryKey: ['plaidAccounts'],
-    queryFn: async () => { const res = await api.get('/integrations/plaid/accounts'); return res.data as { accounts: PlaidAccount[]; count: number; error?: string }; },
+    queryFn: async () => { const res = await api.get('/integrations/plaid/accounts'); return res.data as { accounts: PlaidAccount[]; count: number; error?: string; errors?: string[] }; },
     enabled: connected,
     retry: false,
   });
 
   const { data: txData, isLoading: txLoading } = useQuery({
     queryKey: ['plaidTransactions'],
-    queryFn: async () => { const res = await api.get('/integrations/plaid/transactions', { params: { days: 14, count: 20 } }); return res.data as { transactions: PlaidTransaction[]; count: number; error?: string }; },
+    queryFn: async () => { const res = await api.get('/integrations/plaid/transactions', { params: { days: 14, count: 20 } }); return res.data as { transactions: PlaidTransaction[]; count: number; error?: string; errors?: string[] }; },
     enabled: connected,
     retry: false,
   });
 
-  const handleConnect = async () => {
+  const handleConnect = async (label?: string) => {
+    setLinking(true);
     try {
       const res = await api.get('/integrations/plaid/link-token');
       const { link_token, error } = res.data;
@@ -424,12 +483,17 @@ function PlaidSection({ connected }: { connected: boolean }) {
       }
       const handler = (window as any).Plaid.create({
         token: link_token,
-        onSuccess: async (publicToken: string) => {
-          await api.post('/integrations/plaid/exchange', { public_token: publicToken });
+        onSuccess: async (publicToken: string, metadata?: any) => {
+          const institution = metadata?.institution?.name || label || `Bank ${accounts.length + 1}`;
+          await api.post('/integrations/plaid/exchange', {
+            public_token: publicToken,
+            account_label: institution,
+          });
           queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
           queryClient.invalidateQueries({ queryKey: ['plaidAccounts'] });
           queryClient.invalidateQueries({ queryKey: ['plaidTransactions'] });
           queryClient.invalidateQueries({ queryKey: ['plaidClusters'] });
+          toast({ title: 'Bank connected', description: `${institution} linked successfully.`, variant: 'success' });
         },
         onExit: (err: any) => {
           if (err) console.error('Plaid Link exit:', err);
@@ -439,6 +503,20 @@ function PlaidSection({ connected }: { connected: boolean }) {
     } catch (err) {
       console.error('Plaid Link init failed:', err);
       alert('Plaid Link failed to start. Check console for details.');
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const disconnectAccount = async (connectionId: string) => {
+    try {
+      await api.delete(`/integrations/accounts/${connectionId}`);
+      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['plaidAccounts'] });
+      queryClient.invalidateQueries({ queryKey: ['plaidTransactions'] });
+      toast({ title: 'Account disconnected', description: 'Bank account removed.', variant: 'success' });
+    } catch {
+      toast({ title: 'Error', description: 'Failed to disconnect account', variant: 'error' });
     }
   };
 
@@ -446,6 +524,26 @@ function PlaidSection({ connected }: { connected: boolean }) {
     <IntegrationCard title="Plaid (Banking)" description="View accounts and transactions" connected={connected} icon="🏦">
       {connected ? (
         <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-muted-foreground">{accounts.length} bank account(s)</p>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={linking} onClick={() => handleConnect()}>
+              {linking ? 'Linking…' : '+ Add bank account'}
+            </Button>
+          </div>
+
+          {accounts.length > 0 && (
+            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              {accounts.map((acc) => (
+                <div key={acc.id} className="flex items-center justify-between border rounded p-1.5 text-sm">
+                  <span className="truncate max-w-[140px]" title={acc.label}>{acc.label}</span>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive" onClick={() => disconnectAccount(acc.id)}>
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {accountData?.error && (
             <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded p-2">
               {accountData.error}
@@ -474,14 +572,16 @@ function PlaidSection({ connected }: { connected: boolean }) {
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Link your bank account securely via Plaid.</p>
+          <p className="text-sm text-muted-foreground">Link one or more bank accounts securely via Plaid. All accounts feed the same transaction clusters, chatbot and RAG pipeline.</p>
           {plaidMode && !plaidMode.real_bank_supported && (
             <div className="rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-800 dark:text-amber-200 space-y-1">
               <p className="font-medium">Plaid is in {plaidMode.mode} mode — real bank logins won't work here.</p>
               <p>Plaid Link in sandbox only accepts fake test credentials (user_good / pass_good). To connect your real Scotiabank account, set <code className="font-mono">PLAID_ENV=development</code> with development-mode API keys from the Plaid dashboard, then restart the backend.</p>
             </div>
           )}
-          <Button size="sm" onClick={handleConnect}>Connect Bank Account</Button>
+          <Button size="sm" onClick={() => handleConnect()} disabled={linking}>
+            {linking ? 'Linking…' : 'Connect Bank Account'}
+          </Button>
         </div>
       )}
     </IntegrationCard>
@@ -875,6 +975,16 @@ function WebToolsSection() {
 // ─── JobChameleon microservice (job intelligence) ──────────────────
 
 function JobChameleonSection() {
+  const [desktop, setDesktop] = useState(false);
+
+  useEffect(() => {
+    isDesktopMode().then(setDesktop);
+  }, []);
+
+  // JobChameleon requires the Docker microservice, so it is hidden in the
+  // self-contained desktop build.
+  if (desktop) return null;
+
   const { data: status, isLoading } = useQuery({
     queryKey: ['jobchameleonStatus'],
     queryFn: async () => {
@@ -1110,8 +1220,8 @@ export function IntegrationsPanel() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <EmailSection />
           <CalendarSection connected={status?.calendar?.connected ?? false} />
-          <PlaidSection connected={status?.plaid?.connected ?? false} />
-          <GmailSection connected={status?.email?.gmail_connected ?? false} />
+          <PlaidSection connected={status?.plaid?.connected ?? false} accounts={status?.plaid?.accounts ?? []} />
+          <GmailSection connected={status?.gmail?.connected ?? false} accounts={status?.gmail?.accounts ?? []} />
         </div>
       </div>
 

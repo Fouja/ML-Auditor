@@ -12,7 +12,7 @@ from config.api import api
 
 
 def health(request):
-    """Liveness/readiness probe for Kubernetes and docker-compose healthchecks."""
+    """Liveness/readiness probe for Kubernetes, docker-compose, and the desktop app."""
     return JsonResponse({"status": "ok", "service": "ml-auditor-backend"})
 
 
@@ -20,6 +20,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", api.urls),
     path("api/logs/", include("apps.logs.urls")),
+    path("api/health/", health),
     path("health", health),
 ]
 

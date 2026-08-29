@@ -81,3 +81,14 @@ backend/.pytest_cache/
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Knowledge graph generated artifacts
+graphify-out/
+
+# Tauri desktop build artifacts
+frontend/src-tauri/binaries/
+frontend/src-tauri/gen/
+frontend/src-tauri/target/
+frontend/src-tauri/ml-auditor-updater.key
+frontend/dist/
+desktop-data/

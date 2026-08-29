@@ -17,6 +17,45 @@ Autonomous AI agent system for intelligent management of emails, calendars, bank
 
 ---
 
+## Option C: Desktop App (Ubuntu .deb)
+
+A self-contained Ubuntu desktop app is available. It bundles the Next.js
+frontend, the Django backend, and a local SQLite database — no Docker,
+PostgreSQL, or Redis required.
+
+See [`docs/DESKTOP.md`](docs/DESKTOP.md) for the full architecture and build
+instructions.
+
+### Install the pre-built `.deb`
+
+```bash
+cd ~/Desktop/ML-auditor
+sudo dpkg -i frontend/src-tauri/target/release/bundle/deb/ML-Auditor_0.1.0_amd64.deb
+```
+
+Launch from the application menu or run:
+
+```bash
+ml-auditor-desktop
+```
+
+### Build from source
+
+```bash
+cd ~/Desktop/ML-auditor/frontend
+TAURI_SIGNING_PRIVATE_KEY_PATH=src-tauri/ml-auditor-updater.key \
+  TAURI_BUILD=1 \
+  npm run tauri:build
+```
+
+The installable package is produced at:
+
+```
+frontend/src-tauri/target/release/bundle/deb/ML-Auditor_0.1.0_amd64.deb
+```
+
+---
+
 ## Option A: Docker Compose (Recommended)
 
 Everything runs in containers. No local installs needed beyond Docker.
@@ -28,11 +67,11 @@ cd ~/Desktop/ML-auditor
 cp .env.example .env
 # Edit .env — at minimum set NIM_API_KEY
 
-# Start all services
+# Start core development services
 docker compose up
 ```
 
-**Services started:**
+**Services started by default (core dev stack):**
 
 | Service | URL | Description |
 |---------|-----|-------------|
@@ -42,9 +81,13 @@ docker compose up
 | Django Admin | http://localhost:8000/admin/ | Admin panel |
 | PostgreSQL | localhost:5432 | Database |
 | Redis | localhost:6379 | Cache & message broker |
-| Elasticsearch | http://localhost:9200 | Log storage & search |
-| Kibana | http://localhost:5601 | Log dashboard & visualization |
-| Logstash | localhost:5044/9600 | Log pipeline |
+
+The ELK stack (Elasticsearch, Logstash, Kibana, APM Server, Filebeat, Metricbeat) is **not started by default** because it consumes a lot of memory/CPU. Start it only when you need logs/metrics dashboards:
+
+```bash
+# Start the monitoring profile (ELK + APM + Beats) on top of the dev stack
+docker compose --profile monitoring up -d
+```
 
 **Useful commands:**
 
@@ -201,19 +244,26 @@ Every log entry is a JSON line with:
 
 ### ELK Stack (Built into Docker Compose)
 
-Elasticsearch, Logstash, Kibana, and Filebeat are already defined in `docker-compose.yml`. When you run `docker compose up`, all logging services start automatically.
+Elasticsearch, Logstash, Kibana, Filebeat, Metricbeat, and APM Server are defined in `docker-compose.yml` under the `monitoring` profile. They do **not** start with the core dev stack to save resources.
 
-**Start everything (including ELK):**
+**Start core dev services only:**
 
 ```bash
 cd ~/Desktop/ML-auditor
 docker compose up -d
 ```
 
-**Or start only ELK services separately:**
+**Start everything including monitoring/ELK:**
 
 ```bash
-docker compose up -d elasticsearch logstash kibana filebeat
+cd ~/Desktop/ML-auditor
+docker compose --profile monitoring up -d
+```
+
+**Or start only the ELK/monitoring services:**
+
+```bash
+docker compose --profile monitoring up -d elasticsearch logstash kibana filebeat apm-server metricbeat
 ```
 
 **Verify everything is running:**
@@ -235,6 +285,8 @@ Wait 60-90 seconds for Elasticsearch and Kibana to fully initialize.
 ```bash
 # Go to Kibana → Stack Management → Saved Objects → Import
 # Select: docker/kibana/saved-objects.ndjson
+# Also import: docker/kibana/ml-auditor-metrics-dashboards.ndjson
+# And import: docker/kibana/ai-agent-telemetry.ndjson
 ```
 
 This imports 3 index patterns and 6 saved searches.
@@ -302,8 +354,12 @@ Authorization: Bearer <token>
 ### Stopping ELK
 
 ```bash
-sudo docker stop mlauditor_kibana mlauditor_logstash mlauditor_elasticsearch
-sudo docker rm mlauditor_kibana mlauditor_logstash mlauditor_elasticsearch
+# Stop only monitoring-profile containers
+docker compose --profile monitoring down
+
+# Or stop individual ELK containers
+sudo docker stop mlauditor_kibana mlauditor_logstash mlauditor_elasticsearch mlauditor_apm_server mlauditor_filebeat mlauditor_metricbeat
+sudo docker rm mlauditor_kibana mlauditor_logstash mlauditor_elasticsearch mlauditor_apm_server mlauditor_filebeat mlauditor_metricbeat
 ```
 
 ### Viewing Logs Locally (Without ELK)

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ML-Auditor",
+  "version": "0.1.0",
+  "identifier": "com.fouja.mlauditor",
+  "build": {
+    "beforeBuildCommand": "TAURI_BUILD=1 npm run build",
+    "beforeDevCommand": "npm run dev -- --port 3142",
+    "devUrl": "http://localhost:3142",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ML-Auditor",
+        "width": 1440,
+        "height": 900,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "externalBin": ["binaries/ml-auditor-backend"]
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/Fouja/ML-Auditor/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3M0VBRTM3RkEwQTgzNjMKUldSamd3cjZONjQrUnprdC9odDN3bmR4NWJPNXpMT2pTeis0TEkrRzNvMm5uK3k4RmFRZzdoQlEK"
+    }
+  }
+}

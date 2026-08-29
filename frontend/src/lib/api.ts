@@ -1,14 +1,27 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getBackendUrl } from './desktop';
+
+const FALLBACK_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
-  baseURL: `${API_URL}/api`,
+  baseURL: `${FALLBACK_API_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
   timeout: 90000,
 });
+
+// Resolve the real backend URL on every request. In the Tauri desktop app this
+// comes from the Rust sidecar; in a browser it stays the static fallback.
+async function resolveBaseUrl(): Promise<string> {
+  try {
+    const backendUrl = await getBackendUrl();
+    return `${backendUrl}/api`;
+  } catch {
+    return `${FALLBACK_API_URL}/api`;
+  }
+}
 
 // ---- Frontend Logger ----
 // Writes structured JSON logs to /var/log/ml-auditor/frontend/frontend.log (when available)
@@ -67,7 +80,8 @@ class FrontendLogger {
     const entries = this.buffer.splice(0, this.BUFFER_SIZE);
 
     try {
-      await fetch(`${API_URL}/api/logs/`, {
+      const backendUrl = await getBackendUrl();
+      await fetch(`${backendUrl}/api/logs/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ logs: entries }),
@@ -124,9 +138,15 @@ export const frontendLogger = new FrontendLogger();
 
 // Request interceptor to add auth token + log requests
 api.interceptors.request.use(
-  (config) => {
+  async (config) => {
     const startTime = Date.now();
     (config as unknown as Record<string, unknown>)._startTime = startTime;
+
+    // In the desktop app the backend runs on a random local port chosen by
+    // Tauri, so we rewrite the request baseURL before it goes out.
+    if (config.url && !config.url.startsWith('http')) {
+      config.baseURL = await resolveBaseUrl();
+    }
 
     if (typeof window !== "undefined") {
       const token = localStorage.getItem("access_token");
@@ -181,7 +201,8 @@ api.interceptors.response.use(
         if (refreshToken) {
           try {
             frontendLogger.info("Attempting token refresh");
-            const response = await axios.post(`${API_URL}/api/users/refresh`, {
+            const backendUrl = await getBackendUrl();
+            const response = await axios.post(`${backendUrl}/api/users/refresh`, {
               refresh: refreshToken,
             });
             const { access, refresh } = response.data;

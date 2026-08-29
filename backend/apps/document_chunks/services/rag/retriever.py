@@ -17,18 +17,54 @@ from __future__ import annotations
 import logging
 import math
 import re
+import time
 
 from django.db import connection
 
 from .embedding_source import embed_query
 
 logger = logging.getLogger(__name__)
+METRICS_LOGGER = logging.getLogger("apps.metrics")
 
 _MIN_SCORE = 0.30
 _MAX_LIMIT = 50
 _STOP_TOKENS = {"a", "an", "the", "and", "or", "of", "to", "for", "in", "on", "at", "with", "my", "your", "i", "me", "is", "are", "was", "were", "about"}
 
 _HIT_KEYS = ("chunk_id", "content", "score", "source_type", "category", "metadata", "created_at")
+
+
+def _log_retrieval(user, query: str, method: str, hits: list, limit: int, latency_ms: float):
+    """Emit structured telemetry for every RAG retrieval."""
+    source_types = sorted({h.get("source_type") for h in hits if h.get("source_type")})
+    categories = sorted({h.get("category") for h in hits if h.get("category")})
+    try:
+        from apps.document_chunks.services.embedding_generation import DIMENSIONS, EMBEDDING_MODEL
+        dimensions = DIMENSIONS
+        embedding_model = EMBEDDING_MODEL
+    except Exception:
+        dimensions = 1024
+        embedding_model = "unknown"
+
+    METRICS_LOGGER.info(
+        "rag_retrieval",
+        extra={
+            "metrics": {
+                "metric": "rag_retrieval",
+                "metric_type": "rag",
+                "agent_action": "pgvector_search",
+                "search_query": query[:500],
+                "search_method": method,
+                "embedding_model": embedding_model,
+                "dimensions": dimensions,
+                "top_k": limit,
+                "results_returned": len(hits),
+                "source_types": source_types,
+                "cluster_categories": categories,
+                "latency_ms": latency_ms,
+                "user_id": str(getattr(user, "id", "")),
+            }
+        },
+    )
 
 
 def _is_all_zero(embedding) -> bool:
@@ -96,6 +132,21 @@ def _retrieve_pgvector(user, query_vec, *, sources=None, categories=None, since=
     return hits
 
 
+def _retrieve_sqlite_vec(user, query_vec, *, sources=None, categories=None, since=None, limit=10, min_score=_MIN_SCORE) -> list[dict]:
+    """Native sqlite-vec cosine distance search (desktop SQLite path)."""
+    from . import sqlite_vec
+
+    return sqlite_vec.search(
+        list(query_vec),
+        user.id,
+        sources=sources,
+        categories=categories,
+        since=since,
+        limit=limit,
+        min_score=min_score,
+    )
+
+
 def _retrieve_python(user, query_vec, *, sources=None, categories=None, since=None, limit=10, min_score=_MIN_SCORE) -> list[dict]:
     """In-process numpy cosine scan (SQLite/test fallback)."""
     qs = _build_queryset(user, sources=sources, categories=categories, since=since)
@@ -134,6 +185,7 @@ def retrieve(user, query, *, sources=None, categories=None, since=None, limit=10
 
     ``limit`` is clamped to ``_MAX_LIMIT``; ``min_score`` to ``[0, 1]``.
     """
+    start = time.monotonic()
     limit = max(1, min(int(limit), _MAX_LIMIT))
     min_score = max(0.0, min(float(min_score), 1.0))
     query = (query or "").strip()
@@ -147,16 +199,36 @@ def retrieve(user, query, *, sources=None, categories=None, since=None, limit=10
             user, query_vec, sources=sources, categories=categories,
             since=since, limit=limit, min_score=min_score,
         )
+        method = "pgvector_cosine"
         if hits or not hybrid:
+            latency_ms = round((time.monotonic() - start) * 1000)
+            _log_retrieval(user, query, method, hits, limit, latency_ms)
             return hits, "pgvector"
     elif not _is_all_zero(query_vec):
+        # Desktop/SQLite path: try sqlite-vec first, then fall back to Python cosine.
+        sqlite_hits = _retrieve_sqlite_vec(
+            user, query_vec, sources=sources, categories=categories,
+            since=since, limit=limit, min_score=min_score,
+        )
+        if sqlite_hits:
+            latency_ms = round((time.monotonic() - start) * 1000)
+            _log_retrieval(user, query, "sqlite_vec_cosine", sqlite_hits, limit, latency_ms)
+            return sqlite_hits, "sqlite-vec"
+
         hits = _retrieve_python(
             user, query_vec, sources=sources, categories=categories,
             since=since, limit=limit, min_score=min_score,
         )
+        method = "python_cosine"
         if hits or not hybrid:
+            latency_ms = round((time.monotonic() - start) * 1000)
+            _log_retrieval(user, query, method, hits, limit, latency_ms)
             return hits, "python"
 
-    return _retrieve_keyword(
+    hits = _retrieve_keyword(
         user, query, sources=sources, categories=categories, since=since, limit=limit
-    ), "keyword"
+    )
+    method = "keyword_fallback"
+    latency_ms = round((time.monotonic() - start) * 1000)
+    _log_retrieval(user, query, method, hits, limit, latency_ms)
+    return hits, "keyword"
