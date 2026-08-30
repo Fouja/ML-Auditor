@@ -275,7 +275,7 @@ JC_PUBLIC_URL = env("JC_PUBLIC_URL", default="http://localhost:8787")
 JCAPP_PUBLIC_URL = env("JCAPP_PUBLIC_URL", default="http://localhost:8088")
 JC_API_TOKEN = env("JC_API_TOKEN", default="")
 
-# Plaid / Google OAuth / Canva
+# Plaid / Google OAuth / Canva / Jira
 PLAID_CLIENT_ID = env("PLAID_CLIENT_ID", default="")
 PLAID_SECRET = env("PLAID_SECRET", default="")
 PLAID_ENV = env("PLAID_ENV", default="sandbox")
@@ -287,7 +287,22 @@ GOOGLE_OAUTH_REDIRECT_URI = env(
 )
 CANVA_CLIENT_ID = env("CANVA_CLIENT_ID", default="")
 CANVA_CLIENT_SECRET = env("CANVA_CLIENT_SECRET", default="")
+CANVA_OAUTH_REDIRECT_URI = env(
+    "CANVA_OAUTH_REDIRECT_URI",
+    default="http://localhost:8000/api/integrations/oauth/canva/callback",
+)
+JIRA_OAUTH_CLIENT_ID = env("JIRA_OAUTH_CLIENT_ID", default="")
+JIRA_OAUTH_CLIENT_SECRET = env("JIRA_OAUTH_CLIENT_SECRET", default="")
+JIRA_OAUTH_REDIRECT_URI = env(
+    "JIRA_OAUTH_REDIRECT_URI",
+    default="http://localhost:8000/api/integrations/oauth/jira/callback",
+)
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
+# URL where the user should be sent after OAuth approval (web app or deep link)
+FRONTEND_OAUTH_REDIRECT_URL = env(
+    "FRONTEND_OAUTH_REDIRECT_URL",
+    default=FRONTEND_URL,
+)
 
 # Sentry Configuration
 SENTRY_DSN = env("SENTRY_DSN")

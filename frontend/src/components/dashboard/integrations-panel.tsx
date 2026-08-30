@@ -26,6 +26,8 @@ import {
 import { ApiKeyManager } from './api-key-manager';
 import { IntegrationLogs } from './integration-logs';
 import { HowItWorks } from './how-it-works';
+import { IntegrationConnectTabs } from './integration-connect-tabs';
+import { InlineApiKeyForm } from './inline-api-key-form';
 
 // ─── Status badges ──────────────────────────────────────────────────
 
@@ -245,6 +247,7 @@ function GmailSection({ connected, accounts }: { connected: boolean; accounts: I
   const queryClient = useQueryClient();
   const [syncingAll, setSyncingAll] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [connectTab, setConnectTab] = useState<'oauth' | 'apikey'>('oauth');
 
   const { data: clusterData, isLoading: clustersLoading } = useQuery({
     queryKey: ['emailClusters'],
@@ -362,16 +365,27 @@ function GmailSection({ connected, accounts }: { connected: boolean; accounts: I
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            Connect one or more Gmail accounts with OAuth2 so Argus can retrieve mail, build email clusters, and answer questions about your inboxes.
+            Connect one or more Gmail accounts so Argus can retrieve mail, build email clusters, and answer questions about your inboxes.
           </p>
-          <div className="rounded border border-slate-300 bg-slate-50 dark:bg-slate-800/60 p-2 text-xs text-muted-foreground space-y-1">
-            <p>If you see <code className="font-mono">access_denied</code> or <code className="font-mono">redirect_uri_mismatch</code>, in the Google Cloud console (APIs &amp; Services → Credentials → OAuth 2.0 Web client):</p>
-            <p>1) Add your Google account as a <strong>Test user</strong> on the OAuth consent screen.</p>
-            <p>2) Add this Authorized redirect URI:</p>
-            <code className="font-mono text-[11px] break-all">{'http://localhost:8000/api/integrations/oauth/google/callback'}</code>
-            <p>3) Enable the Gmail + Calendar APIs in the same project.</p>
-          </div>
-          <Button size="sm" onClick={connectOAuth}>Connect with Google OAuth2</Button>
+          <IntegrationConnectTabs active={connectTab} onChange={setConnectTab} />
+          {connectTab === 'oauth' ? (
+            <div className="space-y-2">
+              <div className="rounded border border-slate-300 bg-slate-50 dark:bg-slate-800/60 p-2 text-xs text-muted-foreground space-y-1">
+                <p>If you see <code className="font-mono">access_denied</code> or <code className="font-mono">redirect_uri_mismatch</code>, in the Google Cloud console (APIs &amp; Services → Credentials → OAuth 2.0 Web client):</p>
+                <p>1) Add your Google account as a <strong>Test user</strong> on the OAuth consent screen.</p>
+                <p>2) Add this Authorized redirect URI:</p>
+                <code className="font-mono text-[11px] break-all">{'http://localhost:8000/api/integrations/oauth/google/callback'}</code>
+                <p>3) Enable the Gmail + Calendar APIs in the same project.</p>
+              </div>
+              <Button size="sm" onClick={connectOAuth}>Connect with Google OAuth2</Button>
+            </div>
+          ) : (
+            <InlineApiKeyForm
+              service="gmail"
+              label="Gmail API token"
+              placeholder="Paste Google access token"
+            />
+          )}
         </div>
       )}
     </IntegrationCard>
@@ -384,6 +398,7 @@ function CalendarSection({ connected }: { connected: boolean }) {
   const [summary, setSummary] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [connectTab, setConnectTab] = useState<'oauth' | 'apikey'>('oauth');
 
   const { data: calData, isLoading } = useQuery({
     queryKey: ['calendarEvents'],
@@ -434,7 +449,16 @@ function CalendarSection({ connected }: { connected: boolean }) {
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Connect your Google account to view and manage calendar events.</p>
-          <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/google'); window.location.href = res.data.url; }}>Connect Calendar</Button>
+          <IntegrationConnectTabs active={connectTab} onChange={setConnectTab} />
+          {connectTab === 'oauth' ? (
+            <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/google'); window.location.href = res.data.url; }}>Connect Calendar with OAuth2</Button>
+          ) : (
+            <InlineApiKeyForm
+              service="google_calendar"
+              label="Google Calendar API token"
+              placeholder="Paste Google access token"
+            />
+          )}
         </div>
       )}
     </IntegrationCard>
@@ -446,6 +470,10 @@ function CalendarSection({ connected }: { connected: boolean }) {
 function PlaidSection({ connected, accounts }: { connected: boolean; accounts: IntegrationAccount[] }) {
   const queryClient = useQueryClient();
   const [linking, setLinking] = useState(false);
+  const [connectTab, setConnectTab] = useState<'oauth' | 'apikey'>('oauth');
+  const [plaidClientId, setPlaidClientId] = useState('');
+  const [plaidSecret, setPlaidSecret] = useState('');
+  const [plaidEnv, setPlaidEnv] = useState('sandbox');
 
   const { data: plaidMode } = useQuery({
     queryKey: ['plaidMode'],
@@ -576,15 +604,45 @@ function PlaidSection({ connected, accounts }: { connected: boolean; accounts: I
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Link one or more bank accounts securely via Plaid. All accounts feed the same transaction clusters, chatbot and RAG pipeline.</p>
-          {plaidMode && !plaidMode.real_bank_supported && (
-            <div className="rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-800 dark:text-amber-200 space-y-1">
-              <p className="font-medium">Plaid is in {plaidMode.mode} mode — real bank logins won't work here.</p>
-              <p>Plaid Link in sandbox only accepts fake test credentials (user_good / pass_good). To connect your real Scotiabank account, set <code className="font-mono">PLAID_ENV=development</code> with development-mode API keys from the Plaid dashboard, then restart the backend.</p>
+          <IntegrationConnectTabs active={connectTab} onChange={setConnectTab} oauthLabel="Plaid Link" apiKeyLabel="Own Credentials" />
+          {connectTab === 'oauth' ? (
+            <div className="space-y-2">
+              {plaidMode && !plaidMode.real_bank_supported && (
+                <div className="rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-2 text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                  <p className="font-medium">Plaid is in {plaidMode.mode} mode — real bank logins won't work here.</p>
+                  <p>Plaid Link in sandbox only accepts fake test credentials (user_good / pass_good). To connect your real bank account, switch to development/production keys.</p>
+                </div>
+              )}
+              <Button size="sm" onClick={() => handleConnect()} disabled={linking}>
+                {linking ? 'Linking…' : 'Connect Bank Account'}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs">Environment</Label>
+                <select
+                  className="w-full rounded border bg-transparent px-3 py-2 text-sm"
+                  value={plaidEnv}
+                  onChange={(e) => setPlaidEnv(e.target.value)}
+                >
+                  <option value="sandbox">Sandbox</option>
+                  <option value="development">Development</option>
+                  <option value="production">Production</option>
+                </select>
+              </div>
+              <InlineApiKeyForm
+                service="plaid"
+                label="My Plaid credentials"
+                requireSecret
+                secretLabel="Plaid Secret"
+                placeholder="Plaid Client ID"
+                secretPlaceholder="Plaid Secret"
+                extraFields={null}
+                onSuccess={() => { setPlaidClientId(''); setPlaidSecret(''); }}
+              />
             </div>
           )}
-          <Button size="sm" onClick={() => handleConnect()} disabled={linking}>
-            {linking ? 'Linking…' : 'Connect Bank Account'}
-          </Button>
         </div>
       )}
     </IntegrationCard>
@@ -596,6 +654,7 @@ function PlaidSection({ connected, accounts }: { connected: boolean; accounts: I
 function CanvaSection({ connected }: { connected: boolean }) {
   const [keywords, setKeywords] = useState('');
   const queryClient = useQueryClient();
+  const [connectTab, setConnectTab] = useState<'oauth' | 'apikey'>('oauth');
 
   const { data: designsData, isLoading } = useQuery({
     queryKey: ['canvaDesigns'],
@@ -659,7 +718,16 @@ function CanvaSection({ connected }: { connected: boolean }) {
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Connect Canva to access designs and monitor competitor trends.</p>
-          <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/canva'); window.location.href = res.data.url; }}>Connect Canva</Button>
+          <IntegrationConnectTabs active={connectTab} onChange={setConnectTab} />
+          {connectTab === 'oauth' ? (
+            <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/canva'); window.location.href = res.data.url; }}>Connect Canva with OAuth2</Button>
+          ) : (
+            <InlineApiKeyForm
+              service="canva"
+              label="Canva access token"
+              placeholder="Paste Canva access token"
+            />
+          )}
         </div>
       )}
     </IntegrationCard>
@@ -718,6 +786,7 @@ function JiraSection({ connected }: { connected: boolean }) {
   const [showConfig, setShowConfig] = useState(false);
   const [selectedProject, setSelectedProject] = useState('');
   const [jql, setJql] = useState('');
+  const [connectTab, setConnectTab] = useState<'oauth' | 'apikey'>('oauth');
 
   const { data: projectsData, isLoading: projectsLoading } = useQuery({
     queryKey: ['jiraProjects'],
@@ -873,7 +942,12 @@ function JiraSection({ connected }: { connected: boolean }) {
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Connect Jira to browse projects, view issues, and sync them into the RAG knowledge base.</p>
-          <Button size="sm" onClick={() => setShowConfig(true)}>Configure Jira</Button>
+          <IntegrationConnectTabs active={connectTab} onChange={setConnectTab} />
+          {connectTab === 'oauth' ? (
+            <Button size="sm" onClick={async () => { const res = await api.get('/integrations/oauth/jira'); window.location.href = res.data.url; }}>Connect Jira with OAuth2</Button>
+          ) : (
+            <Button size="sm" onClick={() => setShowConfig(true)}>Configure Jira with API Token</Button>
+          )}
         </div>
       )}
     </IntegrationCard>
@@ -1169,21 +1243,6 @@ export function IntegrationsPanel() {
     queryKey: ['integrationStatus'],
     queryFn: async () => { const res = await api.get('/integrations/status'); return res.data; },
   });
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const oauth = params.get('oauth');
-    if (oauth === 'success') {
-      queryClient.invalidateQueries({ queryKey: ['integrationStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['emailClusters'] });
-      toast({ title: 'Google connected', description: 'Syncing your Gmail clusters…', variant: 'success' });
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (oauth === 'error') {
-      toast({ title: 'Google OAuth failed', description: 'Check that your account is a Test user on the OAuth consent screen.', variant: 'error' });
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, [queryClient]);
 
   if (isLoading) {
     return (

@@ -63,6 +63,13 @@ class PlaidExchangeSchema(BaseModel):
     account_label: Optional[str] = None
 
 
+class PlaidApiKeySchema(BaseModel):
+    client_id: str
+    secret: str
+    environment: str = "sandbox"
+    label: Optional[str] = "Plaid"
+
+
 # ─── Multi-account connections ────────────────────────────────────────
 
 

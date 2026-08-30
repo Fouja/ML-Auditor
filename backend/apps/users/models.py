@@ -27,6 +27,10 @@ class User(AbstractUser):
     jira_email = models.EmailField(blank=True, default="")
     jira_site_url = models.CharField(max_length=255, blank=True, default="")
 
+    # Jira (OAuth 2.0)
+    jira_oauth_access_token = models.TextField(blank=True, default="")
+    jira_oauth_refresh_token = models.TextField(blank=True, default="")
+
     # IMAP/SMTP email config (generic, any provider)
     email_provider = models.CharField(max_length=32, blank=True, default="custom")
     email_imap_host = models.CharField(max_length=255, blank=True, default="")

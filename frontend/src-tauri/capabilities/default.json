@@ -13,6 +13,7 @@
     "http:default",
     "process:allow-restart",
     "dialog:allow-confirm",
-    "updater:default"
+    "updater:default",
+    "deep-link:default"
   ]
 }

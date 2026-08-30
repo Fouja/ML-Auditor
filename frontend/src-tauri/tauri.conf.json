@@ -42,6 +42,11 @@
     "externalBin": ["binaries/ml-auditor-backend"]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["ml-auditor"]
+      }
+    },
     "updater": {
       "active": true,
       "endpoints": [

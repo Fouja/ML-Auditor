@@ -17,21 +17,39 @@ class JiraClient:
     """
     Client for the Jira Cloud REST API v3.
 
-    Requires:
-        site_url (str): e.g. "https://your-domain.atlassian.net"
-        email (str):    Atlassian account email
-        api_token (str): Jira API token from https://id.atlassian.com/manage/api-tokens
+    Supports both Basic Auth (email + API token) and OAuth 2.0 bearer tokens.
+
+    Basic auth:
+        JiraClient(site_url, email, api_token)
+
+    OAuth 2.0:
+        JiraClient(site_url, oauth_token=oauth_access_token)
     """
 
-    def __init__(self, site_url: str, email: str, api_token: str):
+    def __init__(
+        self,
+        site_url: str,
+        email: Optional[str] = None,
+        api_token: Optional[str] = None,
+        oauth_token: Optional[str] = None,
+    ):
         self.site_url = site_url.rstrip("/")
         self.email = email
         self.api_token = api_token
-        auth_str = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+        self.oauth_token = oauth_token
+
+        if oauth_token:
+            auth_header = f"Bearer {oauth_token}"
+        elif email and api_token:
+            auth_str = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+            auth_header = f"Basic {auth_str}"
+        else:
+            raise ValueError("JiraClient requires either (email, api_token) or oauth_token")
+
         self._client = httpx.Client(
             base_url=self.site_url,
             headers={
-                "Authorization": f"Basic {auth_str}",
+                "Authorization": auth_header,
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             },

@@ -25,6 +25,7 @@ from .schemas import (
     JiraConfigureSchema,
     JiraSyncSchema,
     KijijiSearchSchema,
+    PlaidApiKeySchema,
     PlaidExchangeSchema,
 )
 
@@ -55,9 +56,15 @@ def _account_list(user, service: str):
     ]
 
 
+def _has_api_key(user, service: str) -> bool:
+    from .models import ApiKeyIntegration
+
+    return ApiKeyIntegration.objects.filter(user=user, service=service, is_active=True).exists()
+
+
 @router.get("/status")
 def integration_status(request):
-    """Get status of all integrations, including per-account lists for Gmail/Plaid."""
+    """Get status of all integrations, including per-account lists for Gmail/Plaid and API keys."""
     user = request.auth
     gmail_accounts = _account_list(user, "gmail")
     plaid_accounts = _account_list(user, "plaid")
@@ -68,17 +75,23 @@ def integration_status(request):
             "provider": user.email_provider or "custom",
         },
         "gmail": {
-            "connected": bool(gmail_accounts) or bool(user.google_access_token),
+            "connected": bool(gmail_accounts) or bool(user.google_access_token) or _has_api_key(user, "gmail"),
             "accounts": gmail_accounts,
         },
-        "calendar": {"connected": bool(user.google_access_token)},
+        "calendar": {
+            "connected": bool(user.google_access_token) or _has_api_key(user, "google_calendar"),
+        },
         "plaid": {
-            "connected": bool(plaid_accounts) or bool(getattr(user, "plaid_verified", False)),
+            "connected": bool(plaid_accounts) or bool(getattr(user, "plaid_verified", False)) or _has_api_key(user, "plaid"),
             "accounts": plaid_accounts,
         },
-        "canva": {"connected": bool(user.canva_access_token)},
+        "canva": {
+            "connected": bool(user.canva_access_token) or _has_api_key(user, "canva"),
+        },
         "kijiji": {"connected": True},
-        "jira": {"connected": bool(user.jira_site_url)},
+        "jira": {
+            "connected": bool(user.jira_site_url) or _jira_oauth_connected(user) or _has_api_key(user, "jira"),
+        },
         "web_tools": {"enabled": bool(getattr(user, "web_tools_enabled", False))},
         "mock_data": {"enabled": bool(getattr(user, "mock_data_enabled", False))},
     }
@@ -747,7 +760,15 @@ def plaid_link_token(request):
 
     user = request.auth
     try:
-        plaid = PlaidClient(user)
+        creds = _get_user_plaid_credentials(user)
+        if creds:
+            plaid = PlaidClient.with_credentials(
+                client_id=creds["client_id"],
+                secret=creds["secret"],
+                environment=creds["environment"],
+            )
+        else:
+            plaid = PlaidClient(user)
         result = plaid.create_link_token(user_id=str(user.id))
         link_token = result.get("link_token")
         if not link_token:
@@ -793,7 +814,15 @@ def plaid_exchange(request, payload: PlaidExchangeSchema):
 
     user = request.auth
     try:
-        plaid = PlaidClient(user)
+        creds = _get_user_plaid_credentials(user)
+        if creds:
+            plaid = PlaidClient.with_credentials(
+                client_id=creds["client_id"],
+                secret=creds["secret"],
+                environment=creds["environment"],
+            )
+        else:
+            plaid = PlaidClient(user)
         result = plaid.exchange_public_token(payload.public_token)
         access_token = result.get("access_token")
         if access_token:
@@ -839,6 +868,58 @@ def plaid_exchange(request, payload: PlaidExchangeSchema):
 
         logging.getLogger(__name__).error(f"Plaid exchange error: {e}")
         return {"success": False, "error": f"Token exchange failed: {str(e)}"}
+
+
+def _get_user_plaid_credentials(user):
+    """Return user-provided Plaid client_id/secret if available."""
+    from .models import ApiKeyIntegration
+
+    key = ApiKeyIntegration.objects.filter(user=user, service="plaid", is_active=True).first()
+    if not key:
+        return None
+    return {
+        "client_id": key.decrypted_api_key,
+        "secret": key.decrypted_api_secret,
+        "environment": key.extra_data.get("environment", "sandbox"),
+        "label": key.label,
+    }
+
+
+@router.post("/plaid/connect-api-key")
+def plaid_connect_api_key(request, payload: PlaidApiKeySchema):
+    """Store user-provided Plaid credentials and validate them."""
+    from apps.users.services.plaid_client import PlaidClient
+    from .models import ApiKeyIntegration, IntegrationLog
+
+    user = request.auth
+    client = PlaidClient.with_credentials(
+        client_id=payload.client_id,
+        secret=payload.secret,
+        environment=payload.environment,
+    )
+    if not client.health_check():
+        return {"success": False, "error": "Plaid credentials validation failed"}
+
+    key, _ = ApiKeyIntegration.objects.update_or_create(
+        user=user,
+        service="plaid",
+        defaults={
+            "label": payload.label,
+            "api_key": payload.client_id,
+            "api_secret": payload.secret,
+            "extra_data": {"environment": payload.environment},
+            "is_active": True,
+            "status": "active",
+        },
+    )
+    IntegrationLog.objects.create(
+        user=user,
+        service="plaid",
+        api_key=key,
+        level="success",
+        message="Plaid API credentials validated and saved",
+    )
+    return {"success": True, "id": str(key.id)}
 
 
 @router.get("/plaid/clusters")
@@ -1031,10 +1112,21 @@ def plaid_balances(request):
 # ─── Canva ──────────────────────────────────────────────────────────
 
 
+def _get_canva_token(user):
+    if user.canva_access_token:
+        return user.canva_access_token
+    from .models import ApiKeyIntegration
+
+    key = ApiKeyIntegration.objects.filter(user=user, service="canva", is_active=True).first()
+    if key:
+        return key.decrypted_api_key
+    return None
+
+
 @router.get("/canva/status")
 def canva_status(request):
     user = request.auth
-    return {"connected": bool(user.canva_access_token)}
+    return {"connected": bool(_get_canva_token(user))}
 
 
 @router.get("/canva/designs")
@@ -1043,11 +1135,12 @@ def canva_designs(request, query: str = "", limit: int = Query(20)):
     from apps.users.services.canva_client import CanvaClient
 
     user = request.auth
-    if not user.canva_access_token:
+    token = _get_canva_token(user)
+    if not token:
         return {"designs": [], "count": 0, "error": "Canva not connected"}
 
     try:
-        client = CanvaClient(user.canva_access_token)
+        client = CanvaClient(token)
         designs = client.get_designs(query=query or None, limit=limit)
         return {"designs": designs, "count": len(designs)}
     except Exception as e:
@@ -1067,11 +1160,12 @@ def canva_design_detail(request, design_id: str):
     from apps.users.services.canva_client import CanvaClient
 
     user = request.auth
-    if not user.canva_access_token:
+    token = _get_canva_token(user)
+    if not token:
         return {"error": "Canva not connected"}
 
     try:
-        client = CanvaClient(user.canva_access_token)
+        client = CanvaClient(token)
         design = client.get_design(design_id)
         return design
     except Exception as e:
@@ -1114,11 +1208,12 @@ def canva_competitor_monitor(request, payload: CanvaCompetitorSchema):
     from apps.users.services.canva_client import CanvaClient
 
     user = request.auth
-    if not user.canva_access_token:
+    token = _get_canva_token(user)
+    if not token:
         return {"error": "Canva not connected"}
 
     try:
-        client = CanvaClient(user.canva_access_token)
+        client = CanvaClient(token)
         result = client.track_competitor_keywords(
             keywords=payload.keywords,
             max_results=payload.max_results,
@@ -1137,11 +1232,12 @@ def canva_search_templates(request, payload: CanvaSearchSchema):
     from apps.users.services.canva_client import CanvaClient
 
     user = request.auth
-    if not user.canva_access_token:
+    token = _get_canva_token(user)
+    if not token:
         return {"templates": [], "count": 0, "error": "Canva not connected"}
 
     try:
-        client = CanvaClient(user.canva_access_token)
+        client = CanvaClient(token)
         templates = client.search_public_designs(
             keywords=payload.keywords,
             category=payload.category,
@@ -1204,12 +1300,38 @@ def kijiji_messages(request, limit: int = Query(50)):
 # ─── Jira ─────────────────────────────────────────────────────────────
 
 
+def _jira_oauth_connected(user):
+    return bool(user.jira_oauth_access_token)
+
+
+def _get_jira_client(user):
+    """Return a JiraClient using OAuth if available, otherwise API token."""
+    from apps.users.services.jira_client import JiraClient
+
+    if _jira_oauth_connected(user):
+        site_url = user.jira_site_url or "https://api.atlassian.com"
+        return JiraClient(site_url=site_url, oauth_token=user.jira_oauth_access_token)
+    if user.jira_site_url and user.jira_api_token and user.jira_email:
+        return JiraClient(
+            site_url=user.jira_site_url,
+            email=user.jira_email,
+            api_token=user.jira_api_token,
+        )
+    return None
+
+
 @router.get("/jira/status")
 def jira_status(request):
-    """Check Jira connection status."""
+    """Check Jira connection status (OAuth or API token)."""
     user = request.auth
-    connected = bool(user.jira_site_url and user.jira_api_token and user.jira_email)
-    return {"connected": connected, "site_url": user.jira_site_url or ""}
+    oauth_connected = _jira_oauth_connected(user)
+    token_connected = bool(user.jira_site_url and user.jira_api_token and user.jira_email)
+    return {
+        "connected": oauth_connected or token_connected,
+        "oauth_connected": oauth_connected,
+        "token_connected": token_connected,
+        "site_url": user.jira_site_url or "",
+    }
 
 
 @router.post("/jira/configure")
@@ -1236,18 +1358,12 @@ def jira_configure(request, payload: JiraConfigureSchema):
 @router.get("/jira/projects")
 def jira_projects(request):
     """List Jira projects."""
-    from apps.users.services.jira_client import JiraClient
-
     user = request.auth
-    if not user.jira_site_url or not user.jira_api_token:
+    client = _get_jira_client(user)
+    if not client:
         return {"projects": [], "count": 0, "error": "Jira not configured"}
 
     try:
-        client = JiraClient(
-            site_url=user.jira_site_url,
-            email=user.jira_email,
-            api_token=user.jira_api_token,
-        )
         projects = client.get_projects()
         return {"projects": projects, "count": len(projects)}
     except Exception as e:
@@ -1259,18 +1375,12 @@ def jira_projects(request):
 @router.post("/jira/issues")
 def jira_issues(request, payload: JiraSyncSchema):
     """Fetch Jira issues by project or JQL."""
-    from apps.users.services.jira_client import JiraClient
-
     user = request.auth
-    if not user.jira_site_url or not user.jira_api_token:
+    client = _get_jira_client(user)
+    if not client:
         return {"issues": [], "count": 0, "error": "Jira not configured"}
 
     try:
-        client = JiraClient(
-            site_url=user.jira_site_url,
-            email=user.jira_email,
-            api_token=user.jira_api_token,
-        )
         issues = client.get_issues(
             project_key=payload.project_key,
             jql=payload.jql,
@@ -1286,20 +1396,15 @@ def jira_issues(request, payload: JiraSyncSchema):
 @router.post("/jira/sync")
 def jira_sync(request, payload: JiraSyncSchema):
     """Sync Jira issues into the RAG data store."""
-    from apps.users.services.jira_client import JiraClient
     from apps.document_chunks.models import DocumentChunk
     from apps.data_streams.models import DataStream
 
     user = request.auth
-    if not user.jira_site_url or not user.jira_api_token:
+    client = _get_jira_client(user)
+    if not client:
         return {"success": False, "error": "Jira not configured"}
 
     try:
-        client = JiraClient(
-            site_url=user.jira_site_url,
-            email=user.jira_email,
-            api_token=user.jira_api_token,
-        )
         issues = client.get_issues(
             project_key=payload.project_key,
             jql=payload.jql,
@@ -1368,18 +1473,12 @@ def jira_sync(request, payload: JiraSyncSchema):
 @router.post("/jira/search")
 def jira_search(request, payload: JiraSyncSchema):
     """Search Jira issues and return RAG-ready text snippets."""
-    from apps.users.services.jira_client import JiraClient
-
     user = request.auth
-    if not user.jira_site_url or not user.jira_api_token:
+    client = _get_jira_client(user)
+    if not client:
         return {"results": [], "count": 0, "error": "Jira not configured"}
 
     try:
-        client = JiraClient(
-            site_url=user.jira_site_url,
-            email=user.jira_email,
-            api_token=user.jira_api_token,
-        )
         if payload.project_key:
             results = client.issues_for_rag(project_key=payload.project_key, max_results=payload.max_results)
         elif payload.jql:
@@ -1523,9 +1622,13 @@ def google_oauth_callback(request, code: str = "", state: str = "", error: str =
     from django.http import HttpResponseRedirect
     import httpx
 
-    frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+    frontend = getattr(
+        settings,
+        "FRONTEND_OAUTH_REDIRECT_URL",
+        getattr(settings, "FRONTEND_URL", "http://localhost:3000"),
+    )
     if error or not code:
-        return HttpResponseRedirect(f"{frontend}/dashboard/integrations?oauth=error")
+        return HttpResponseRedirect(f"{frontend}?oauth=error&service=google")
 
     User = get_user_model()
     try:
@@ -1533,7 +1636,7 @@ def google_oauth_callback(request, code: str = "", state: str = "", error: str =
     except Exception:
         user = None
     if not user:
-        return HttpResponseRedirect(f"{frontend}/dashboard/integrations?oauth=nouser")
+        return HttpResponseRedirect(f"{frontend}?oauth=nouser&service=google")
 
     client_id = getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", "")
     client_secret = getattr(settings, "GOOGLE_OAUTH_CLIENT_SECRET", "")
@@ -1596,25 +1699,253 @@ def google_oauth_callback(request, code: str = "", state: str = "", error: str =
                 sync_gmail_for_user.delay(str(user.id))
             except Exception:
                 pass
-        return HttpResponseRedirect(f"{frontend}/dashboard/integrations?oauth=success")
+        return HttpResponseRedirect(f"{frontend}?oauth=success&service=google")
     except Exception as e:
         import logging
 
         logging.getLogger(__name__).error(f"Google OAuth callback failed: {e}")
-        return HttpResponseRedirect(f"{frontend}/dashboard/integrations?oauth=error")
+        return HttpResponseRedirect(f"{frontend}?oauth=error&service=google")
 
 
 @router.get("/oauth/canva")
 def canva_oauth_url(request):
+    from urllib.parse import quote
+
     client_id = getattr(settings, "CANVA_CLIENT_ID", "")
-    redirect_uri = "http://localhost:8000/api/integrations/oauth/canva/callback"
+    redirect_uri = getattr(
+        settings,
+        "CANVA_OAUTH_REDIRECT_URI",
+        "http://localhost:8000/api/integrations/oauth/canva/callback",
+    )
+    state = str(getattr(request.auth, "id", ""))
+    scopes = quote("design:meta:read design:meta:write design:content:read folder:meta:read")
     url = (
         f"https://www.canva.com/api/oauth/authorize?"
         f"response_type=code&client_id={client_id}"
-        f"&redirect_uri={redirect_uri}&scope=design:meta:read "
-        f"design:meta:write design:content:read folder:meta:read"
+        f"&redirect_uri={quote(redirect_uri, safe='')}&scope={scopes}&state={state}"
     )
     return {"url": url}
+
+
+@router.get("/oauth/canva/callback", auth=None)
+def canva_oauth_callback(request, code: str = "", state: str = "", error: str = ""):
+    """Exchange Canva OAuth code for tokens and store on the user."""
+    from django.contrib.auth import get_user_model
+    from django.http import HttpResponseRedirect
+    import httpx
+
+    frontend = getattr(
+        settings,
+        "FRONTEND_OAUTH_REDIRECT_URL",
+        getattr(settings, "FRONTEND_URL", "http://localhost:3000"),
+    )
+    if error or not code:
+        return HttpResponseRedirect(f"{frontend}?oauth=error&service=canva")
+
+    User = get_user_model()
+    try:
+        user = User.objects.get(id=state) if state else None
+    except Exception:
+        user = None
+    if not user:
+        return HttpResponseRedirect(f"{frontend}?oauth=nouser&service=canva")
+
+    client_id = getattr(settings, "CANVA_CLIENT_ID", "")
+    client_secret = getattr(settings, "CANVA_CLIENT_SECRET", "")
+    redirect_uri = getattr(
+        settings,
+        "CANVA_OAUTH_REDIRECT_URI",
+        "http://localhost:8000/api/integrations/oauth/canva/callback",
+    )
+    try:
+        with httpx.Client(timeout=30) as client:
+            token_resp = client.post(
+                "https://api.canva.com/rest/v1/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": redirect_uri,
+                },
+            )
+            token_resp.raise_for_status()
+            data = token_resp.json()
+        access = data.get("access_token")
+        refresh = data.get("refresh_token")
+        if access:
+            user.canva_access_token = access
+            fields = ["canva_access_token"]
+            if refresh:
+                user.canva_refresh_token = refresh
+                fields.append("canva_refresh_token")
+            user.save(update_fields=fields)
+
+            from .models import IntegrationConnection, IntegrationLog
+
+            conn, _ = IntegrationConnection.objects.get_or_create(
+                user=user,
+                service="canva",
+                account_label=user.email or "Canva",
+                defaults={
+                    "access_token": access,
+                    "refresh_token": refresh or "",
+                    "status": "active",
+                    "is_active": True,
+                },
+            )
+            conn.access_token = access
+            if refresh:
+                conn.refresh_token = refresh
+            conn.is_active = True
+            conn.save(update_fields=["access_token", "refresh_token", "is_active"])
+            IntegrationLog.objects.create(
+                user=user,
+                service="canva",
+                connection=conn,
+                level="success",
+                message="Canva connected via OAuth2",
+            )
+            try:
+                from .tasks import sync_canva_for_user
+
+                sync_canva_for_user.delay(str(user.id))
+            except Exception:
+                pass
+        return HttpResponseRedirect(f"{frontend}?oauth=success&service=canva")
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).error(f"Canva OAuth callback failed: {e}")
+        return HttpResponseRedirect(f"{frontend}?oauth=error&service=canva")
+
+
+@router.get("/oauth/jira")
+def jira_oauth_url(request):
+    """Start Atlassian OAuth 2.0 (3LO) flow."""
+    from urllib.parse import quote
+
+    client_id = getattr(settings, "JIRA_OAUTH_CLIENT_ID", "")
+    redirect_uri = getattr(
+        settings,
+        "JIRA_OAUTH_REDIRECT_URI",
+        "http://localhost:8000/api/integrations/oauth/jira/callback",
+    )
+    state = str(getattr(request.auth, "id", ""))
+    scopes = quote("read:jira-user read:jira-work offline_access")
+    url = (
+        f"https://auth.atlassian.com/authorize?"
+        f"audience=api.atlassian.com&client_id={client_id}"
+        f"&scope={scopes}&redirect_uri={quote(redirect_uri, safe='')}"
+        f"&state={state}&response_type=code&prompt=consent"
+    )
+    return {"url": url}
+
+
+@router.get("/oauth/jira/callback", auth=None)
+def jira_oauth_callback(request, code: str = "", state: str = "", error: str = ""):
+    """Exchange Atlassian OAuth code for tokens and store on the user."""
+    from django.contrib.auth import get_user_model
+    from django.http import HttpResponseRedirect
+    import httpx
+
+    frontend = getattr(
+        settings,
+        "FRONTEND_OAUTH_REDIRECT_URL",
+        getattr(settings, "FRONTEND_URL", "http://localhost:3000"),
+    )
+    if error or not code:
+        return HttpResponseRedirect(f"{frontend}?oauth=error&service=jira")
+
+    User = get_user_model()
+    try:
+        user = User.objects.get(id=state) if state else None
+    except Exception:
+        user = None
+    if not user:
+        return HttpResponseRedirect(f"{frontend}?oauth=nouser&service=jira")
+
+    client_id = getattr(settings, "JIRA_OAUTH_CLIENT_ID", "")
+    client_secret = getattr(settings, "JIRA_OAUTH_CLIENT_SECRET", "")
+    redirect_uri = getattr(
+        settings,
+        "JIRA_OAUTH_REDIRECT_URI",
+        "http://localhost:8000/api/integrations/oauth/jira/callback",
+    )
+    try:
+        with httpx.Client(timeout=30) as client:
+            token_resp = client.post(
+                "https://auth.atlassian.com/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+            )
+            token_resp.raise_for_status()
+            data = token_resp.json()
+        access = data.get("access_token")
+        refresh = data.get("refresh_token")
+        if access:
+            user.jira_oauth_access_token = access
+            fields = ["jira_oauth_access_token"]
+            if refresh:
+                user.jira_oauth_refresh_token = refresh
+                fields.append("jira_oauth_refresh_token")
+
+            # Try to discover the Jira site URL from accessible resources.
+            try:
+                with httpx.Client(timeout=30) as resources_client:
+                    resources_resp = resources_client.get(
+                        "https://api.atlassian.com/oauth/token/accessible-resources",
+                        headers={"Authorization": f"Bearer {access}"},
+                    )
+                    resources_resp.raise_for_status()
+                    resources = resources_resp.json()
+                    if resources:
+                        site_url = resources[0].get("url", "")
+                        if site_url:
+                            user.jira_site_url = site_url
+                            fields.append("jira_site_url")
+            except Exception as resource_err:
+                import logging
+                logging.getLogger(__name__).warning(f"Could not fetch Jira accessible resources: {resource_err}")
+
+            user.save(update_fields=fields)
+
+            from .models import IntegrationConnection, IntegrationLog
+
+            conn, _ = IntegrationConnection.objects.get_or_create(
+                user=user,
+                service="jira",
+                account_label=user.email or "Jira",
+                defaults={
+                    "access_token": access,
+                    "refresh_token": refresh or "",
+                    "status": "active",
+                    "is_active": True,
+                },
+            )
+            conn.access_token = access
+            if refresh:
+                conn.refresh_token = refresh
+            conn.is_active = True
+            conn.save(update_fields=["access_token", "refresh_token", "is_active"])
+            IntegrationLog.objects.create(
+                user=user,
+                service="jira",
+                connection=conn,
+                level="success",
+                message="Jira connected via OAuth2",
+            )
+        return HttpResponseRedirect(f"{frontend}?oauth=success&service=jira")
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).error(f"Jira OAuth callback failed: {e}")
+        return HttpResponseRedirect(f"{frontend}?oauth=error&service=jira")
 
 
 # ─── LLM Configuration ─────────────────────────────────────────────────
