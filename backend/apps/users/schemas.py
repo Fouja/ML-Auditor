@@ -71,3 +71,11 @@ class TokenRefresh(Schema):
     """Schema for token refresh."""
 
     refresh: str
+
+
+class PushTokenSchema(Schema):
+    """Schema for registering a push notification token."""
+
+    token: str
+    platform: str = "android"
+    device_id: Optional[str] = ""

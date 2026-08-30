@@ -10,6 +10,7 @@ from ninja.errors import HttpError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .schemas import (
+    PushTokenSchema,
     TokenRefresh,
     TokenResponse,
     UserCreate,
@@ -103,3 +104,30 @@ def get_user(request, user_id: str):
         return User.objects.get(id=user_id)
     except User.DoesNotExist:
         raise HttpError(404, "User not found")
+
+
+@router.post("/push-token")
+def register_push_token(request, payload: PushTokenSchema):
+    """Register or update a push notification token for the current user."""
+    from .models import PushToken
+
+    user = request.auth
+    PushToken.objects.update_or_create(
+        user=user,
+        token=payload.token,
+        defaults={
+            "platform": payload.platform,
+            "device_id": payload.device_id or "",
+            "is_active": True,
+        },
+    )
+    return {"success": True}
+
+
+@router.delete("/push-token/{token}")
+def unregister_push_token(request, token: str):
+    """Deactivate a push notification token."""
+    from .models import PushToken
+
+    PushToken.objects.filter(user=request.auth, token=token).update(is_active=False)
+    return {"success": True}

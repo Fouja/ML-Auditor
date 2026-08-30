@@ -179,6 +179,22 @@ def task_reminders(request):
             reminder.one_hour_reminder_sent = now
             reminder.save(update_fields=["one_hour_reminder_sent"])
 
+    # Send push notifications for reminders.
+    if boot_reminders or one_hour_reminders:
+        try:
+            from apps.users.services.push_notifications import notify_user
+
+            titles = [r["title"] for r in boot_reminders + one_hour_reminders]
+            body = (
+                f"Reminder: {titles[0]}"
+                if len(titles) == 1
+                else f"{len(titles)} tasks need attention"
+            )
+            notify_user(user, "ML-Auditor Reminder", body, {"reminders": titles})
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Push notification failed: {e}")
+
     return {
         "boot": boot_reminders,
         "one_hour": one_hour_reminders,
