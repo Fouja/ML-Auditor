@@ -165,7 +165,9 @@ export default function DesktopPage() {
           <CardHeader>
             <CardTitle>Updates</CardTitle>
             <CardDescription>
-              Check for new releases on GitHub and install them automatically.
+              Check for a new release on GitHub. If one is found, it is
+              downloaded and installed automatically; just restart the app
+              afterwards.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -207,7 +207,7 @@ async fn reset_local_database(
     reset_result
 }
 
-/// Manual update check invoked from the settings UI.
+/// Manual update check + install invoked from the settings UI.
 #[tauri::command]
 async fn check_for_app_update(app: tauri::AppHandle) -> Result<String, String> {
     let updater = app
@@ -216,11 +216,17 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
 
     match updater.check().await.map_err(|e| e.to_string())? {
-        Some(update) => Ok(format!(
-            "Update available: {} (current: {})",
-            update.version,
-            app.package_info().version
-        )),
+        Some(update) => {
+            let latest = update.version.clone();
+            update
+                .download_and_install(|_chunk, _content| {}, || {})
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(format!(
+                "Update {} downloaded. Restart the app to apply it.",
+                latest
+            ))
+        }
         None => Ok("You are on the latest version.".to_string()),
     }
 }
