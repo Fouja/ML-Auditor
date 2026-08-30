@@ -92,3 +92,6 @@ frontend/src-tauri/target/
 frontend/src-tauri/ml-auditor-updater.key
 frontend/dist/
 desktop-data/
+
+# Local installer package (built on demand)
+/ML-Auditor_*.deb
