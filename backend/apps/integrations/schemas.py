@@ -60,6 +60,24 @@ class CalendarEventCreateSchema(BaseModel):
 
 class PlaidExchangeSchema(BaseModel):
     public_token: str
+    account_label: Optional[str] = None
+
+
+# ─── Multi-account connections ────────────────────────────────────────
+
+
+class IntegrationAccountCreateSchema(BaseModel):
+    service: str
+    account_label: str
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    extra_data: Optional[dict] = None
+
+
+class IntegrationAccountUpdateSchema(BaseModel):
+    account_label: Optional[str] = None
+    is_active: Optional[bool] = None
+    extra_data: Optional[dict] = None
 
 
 # ─── Canva ───────────────────────────────────────────────────────────
@@ -148,4 +166,56 @@ class LLMConfigurationResponseSchema(BaseModel):
     model_name: str
     api_endpoint: Optional[str] = None
     is_active: bool
+    created_at: str
+
+
+# ─── API Key Integrations ───────────────────────────────────────────
+
+
+class ApiKeyCreateSchema(BaseModel):
+    service: str
+    label: str
+    api_key: str
+    api_secret: Optional[str] = ""
+    extra_data: Optional[dict] = None
+
+
+class ApiKeyUpdateSchema(BaseModel):
+    label: Optional[str] = None
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
+    extra_data: Optional[dict] = None
+    is_active: Optional[bool] = None
+
+
+class ApiKeyResponseSchema(BaseModel):
+    id: str
+    service: str
+    label: str
+    api_key_masked: str
+    api_secret_masked: str
+    extra_data: Optional[dict]
+    is_active: bool
+    status: str
+    last_tested: Optional[str]
+    last_error: str
+    created_at: str
+    updated_at: str
+
+
+class ApiKeyTestResponseSchema(BaseModel):
+    success: bool
+    status: str
+    error: Optional[str] = None
+
+
+# ─── Integration Logs ───────────────────────────────────────────────
+
+
+class IntegrationLogResponseSchema(BaseModel):
+    id: str
+    service: str
+    level: str
+    message: str
+    metadata: Optional[dict]
     created_at: str

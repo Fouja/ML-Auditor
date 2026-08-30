@@ -82,10 +82,21 @@ export interface AgentStatus {
 }
 
 // Integration types
+export interface IntegrationAccount {
+  id: string;
+  service: string;
+  label: string;
+  status: 'active' | 'error' | 'expired' | 'disconnected';
+  is_active: boolean;
+  last_synced: string | null;
+  items_synced: number;
+}
+
 export interface IntegrationStatus {
   email: { imap_connected: boolean; gmail_connected: boolean; provider: string };
+  gmail: { connected: boolean; accounts: IntegrationAccount[] };
   calendar: { connected: boolean };
-  plaid: { connected: boolean };
+  plaid: { connected: boolean; accounts: IntegrationAccount[] };
   canva: { connected: boolean };
   kijiji: { connected: boolean };
   jira: { connected: boolean };
@@ -98,6 +109,30 @@ export interface IntegrationConnection {
   last_synced: string | null;
   last_error: string;
   items_synced: number;
+}
+
+export interface ApiKeyIntegration {
+  id: string;
+  service: string;
+  label: string;
+  api_key_masked: string;
+  api_secret_masked: string;
+  extra_data: Record<string, unknown>;
+  is_active: boolean;
+  status: 'unknown' | 'active' | 'error' | 'disabled';
+  last_tested: string | null;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationLog {
+  id: string;
+  service: string;
+  level: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface EmailMessage {

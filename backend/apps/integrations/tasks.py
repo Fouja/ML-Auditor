@@ -135,56 +135,89 @@ def sync_email_for_user(user_id: int, folder: str = "INBOX", max_results: int = 
         return {"error": str(e)}
 
 
-@shared_task(name="apps.integrations.tasks.sync_gmail_for_user")
-def sync_gmail_for_user(user_id: int, max_results: int = 100):
-    """Sync Gmail for a single user."""
-    from apps.users.models import User
+def _sync_gmail_connection(user, connection, max_results: int = 100):
+    """Sync a single Gmail IntegrationConnection."""
     from apps.users.services import GmailClient
+    from apps.document_chunks.services.email_clustering import index_email_messages
+
+    gmail = GmailClient(user, connection=connection)
+    messages = gmail.get_messages(max_results=max_results)
+    full_emails = []
+    for meta in messages:
+        message_id = str(meta.get("id") or "")
+        if not message_id:
+            continue
+        try:
+            raw = gmail.get_message(message_id)
+        except Exception:
+            continue
+        headers = {
+            (h.get("name") or "").lower(): (h.get("value") or "")
+            for h in raw.get("payload", {}).get("headers", [])
+        }
+        body = gmail.get_message_body(message_id)
+        full_emails.append(
+            {
+                "message_id": message_id,
+                "subject": headers.get("subject", ""),
+                "from": headers.get("from", ""),
+                "date": headers.get("date", ""),
+                "body_text": body,
+                "snippet": meta.get("snippet", "") or "",
+                "connection_id": str(connection.id) if connection else None,
+            }
+        )
+    indexed = index_email_messages(user, full_emails, source_type="gmail")
+    return {"synced": len(messages), "indexed": indexed}
+
+
+@shared_task(name="apps.integrations.tasks.sync_gmail_for_user")
+def sync_gmail_for_user(user_id: int, connection_id: str = None, max_results: int = 100):
+    """Sync Gmail for a single user.
+
+    If ``connection_id`` is provided, only that account is synced. Otherwise all
+    active Gmail IntegrationConnection rows for the user are synced (with a
+    fallback to the legacy single-token User fields when no connections exist).
+    """
+    from apps.users.models import User
+    from apps.integrations.models import IntegrationConnection
 
     try:
         user = User.objects.get(id=user_id)
-        if not user.google_access_token:
-            return {"skipped": True, "reason": "no_token"}
+    except User.DoesNotExist:
+        return {"error": "user_not_found"}
 
-        gmail = GmailClient(user)
-        messages = gmail.get_messages(max_results=max_results)
-        full_emails = []
-        for meta in messages:
-            message_id = str(meta.get("id") or "")
-            if not message_id:
-                continue
-            try:
-                raw = gmail.get_message(message_id)
-            except Exception:
-                continue
-            headers = {
-                (h.get("name") or "").lower(): (h.get("value") or "")
-                for h in raw.get("payload", {}).get("headers", [])
-            }
-            body = gmail.get_message_body(message_id)
-            full_emails.append(
-                {
-                    "message_id": message_id,
-                    "subject": headers.get("subject", ""),
-                    "from": headers.get("from", ""),
-                    "date": headers.get("date", ""),
-                    "body_text": body,
-                    "snippet": meta.get("snippet", "") or "",
-                }
+    results = []
+    try:
+        if connection_id:
+            connection = IntegrationConnection.objects.get(
+                id=connection_id, user=user, service="gmail", is_active=True
             )
-        from apps.document_chunks.services.email_clustering import index_email_messages
-
-        indexed = index_email_messages(user, full_emails, source_type="gmail")
-        _update_connection(user, "gmail", success=True, items=len(messages))
-        return {"synced": len(messages), "indexed": indexed}
+            result = _sync_gmail_connection(user, connection, max_results=max_results)
+            _update_connection(user, "gmail", success=True, items=result["synced"])
+            results.append({"connection_id": connection_id, **result})
+        else:
+            connections = IntegrationConnection.objects.filter(
+                user=user, service="gmail", is_active=True
+            ).order_by("-updated_at")
+            if connections.exists():
+                for conn in connections:
+                    result = _sync_gmail_connection(user, conn, max_results=max_results)
+                    _update_connection(user, "gmail", success=True, items=result["synced"])
+                    results.append({"connection_id": str(conn.id), **result})
+            elif user.google_access_token:
+                # Legacy fallback
+                result = _sync_gmail_connection(user, None, max_results=max_results)
+                _update_connection(user, "gmail", success=True, items=result["synced"])
+                results.append({"connection_id": None, **result})
+            else:
+                return {"skipped": True, "reason": "no_token"}
     except Exception as e:
         logger.error(f"Gmail sync failed for user {user_id}: {e}")
-        try:
-            user = User.objects.get(id=user_id)
-            _update_connection(user, "gmail", success=False, error=str(e))
-        except User.DoesNotExist:
-            pass
+        _update_connection(user, "gmail", success=False, error=str(e))
         return {"error": str(e)}
+
+    return {"results": results, "total_synced": sum(r["synced"] for r in results)}
 
 
 @shared_task(name="apps.integrations.tasks.sync_calendar_for_user")
@@ -213,32 +246,74 @@ def sync_calendar_for_user(user_id: int, hours: int = 168):
         return {"error": str(e)}
 
 
-@shared_task(name="apps.integrations.tasks.sync_plaid_for_user")
-def sync_plaid_for_user(user_id: int):
-    """Sync Plaid accounts and recent transactions for a single user."""
-    from apps.users.models import User
+def _sync_plaid_connection(user, connection):
+    """Sync a single Plaid IntegrationConnection."""
     from apps.users.services import PlaidClient
+    from .services.transaction_clustering import index_plaid_transactions
+
+    plaid = PlaidClient(user, connection=connection)
+    accounts = plaid.get_accounts()
+    index_result = index_plaid_transactions(user, connection=connection)
+    return {
+        "accounts": len(accounts),
+        "transactions_indexed": index_result.get("created", 0),
+        "index_error": index_result.get("error"),
+    }
+
+
+@shared_task(name="apps.integrations.tasks.sync_plaid_for_user")
+def sync_plaid_for_user(user_id: int, connection_id: str = None):
+    """Sync Plaid accounts and recent transactions for a single user.
+
+    If ``connection_id`` is provided, only that bank account is synced. Otherwise
+    all active Plaid IntegrationConnection rows for the user are synced (with a
+    fallback to the legacy single-token User fields when no connections exist).
+    """
+    from apps.users.models import User
+    from apps.integrations.models import IntegrationConnection
 
     try:
         user = User.objects.get(id=user_id)
-        if not user.plaid_access_token:
-            return {"skipped": True, "reason": "no_token"}
+    except User.DoesNotExist:
+        return {"error": "user_not_found"}
 
-        plaid = PlaidClient(user)
-        accounts = plaid.get_accounts()
-        end = datetime.now()
-        start = end - timedelta(days=30)
-        transactions = plaid.get_transactions(start_date=start, end_date=end)
-        _update_connection(user, "plaid", success=True, items=len(transactions))
-        return {"accounts": len(accounts), "transactions": len(transactions)}
+    results = []
+    try:
+        if connection_id:
+            connection = IntegrationConnection.objects.get(
+                id=connection_id, user=user, service="plaid", is_active=True
+            )
+            result = _sync_plaid_connection(user, connection)
+            _update_connection(user, "plaid", success=True, items=result["transactions_indexed"])
+            results.append({"connection_id": connection_id, **result})
+        else:
+            connections = IntegrationConnection.objects.filter(
+                user=user, service="plaid", is_active=True
+            ).order_by("-updated_at")
+            if connections.exists():
+                for conn in connections:
+                    result = _sync_plaid_connection(user, conn)
+                    _update_connection(
+                        user, "plaid", success=True, items=result["transactions_indexed"]
+                    )
+                    results.append({"connection_id": str(conn.id), **result})
+            elif user.plaid_access_token:
+                # Legacy fallback
+                result = _sync_plaid_connection(user, None)
+                _update_connection(user, "plaid", success=True, items=result["transactions_indexed"])
+                results.append({"connection_id": None, **result})
+            else:
+                return {"skipped": True, "reason": "no_token"}
     except Exception as e:
         logger.error(f"Plaid sync failed for user {user_id}: {e}")
-        try:
-            user = User.objects.get(id=user_id)
-            _update_connection(user, "plaid", success=False, error=str(e))
-        except User.DoesNotExist:
-            pass
+        _update_connection(user, "plaid", success=False, error=str(e))
         return {"error": str(e)}
+
+    return {
+        "results": results,
+        "total_accounts": sum(r["accounts"] for r in results),
+        "total_transactions_indexed": sum(r["transactions_indexed"] for r in results),
+    }
 
 
 @shared_task(name="apps.integrations.tasks.sync_canva_for_user")
@@ -358,3 +433,98 @@ def sync_kijiji_for_user(user_id: int):
         except User.DoesNotExist:
             pass
         return {"error": str(e)}
+
+
+def test_api_key_integration(user, key):
+    """Test an ApiKeyIntegration record and return a status dict.
+
+    This performs a lightweight validation against the upstream service
+    without running a full sync.
+    """
+    service = key.service
+    api_key = key.decrypted_api_key
+    api_secret = key.decrypted_api_secret
+
+    if not api_key:
+        return {"success": False, "status": "error", "error": "API key is empty"}
+
+    try:
+        if service == "plaid":
+            from apps.users.services.plaid_client import PlaidClient
+
+            client = PlaidClient.with_credentials(
+                client_id=api_key,
+                secret=api_secret,
+                environment=key.extra_data.get("environment", "sandbox"),
+            )
+            return {"success": True, "status": "active"} if client.health_check() else {"success": False, "status": "error", "error": "Plaid health check failed"}
+
+        if service in ("gmail", "google_calendar"):
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
+            from googleapiclient.errors import HttpError
+
+            creds = Credentials(token=api_key)
+            service_name = "gmail" if service == "gmail" else "calendar"
+            version = "v1"
+            build(service_name, version, credentials=creds, cache_discovery=False).users().getProfile(userId="me").execute()
+            return {"success": True, "status": "active"}
+
+        if service == "jira":
+            import requests
+            from requests.auth import HTTPBasicAuth
+
+            site_url = key.extra_data.get("site_url", "")
+            email = key.extra_data.get("email", "")
+            if not site_url or not email:
+                return {"success": False, "status": "error", "error": "Jira requires site_url and email in extra data"}
+            url = site_url.rstrip("/") + "/rest/api/3/myself"
+            resp = requests.get(url, auth=HTTPBasicAuth(email, api_key), timeout=15)
+            resp.raise_for_status()
+            return {"success": True, "status": "active"}
+
+        if service == "canva":
+            import requests
+
+            resp = requests.get(
+                "https://api.canva.com/rest/v1/designs",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=15,
+            )
+            if resp.status_code in (200, 401):
+                # 401 usually means valid token but insufficient scopes; treat as reachable.
+                return {"success": True, "status": "active"}
+            resp.raise_for_status()
+            return {"success": True, "status": "active"}
+
+        if service in ("openai", "anthropic", "nvidia"):
+            import requests
+
+            provider_endpoints = {
+                "openai": "https://api.openai.com/v1/models",
+                "anthropic": "https://api.anthropic.com/v1/models",
+                "nvidia": "https://integrate.api.nvidia.com/v1/models",
+            }
+            headers = {"Authorization": f"Bearer {api_key}"}
+            if service == "anthropic":
+                headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+            resp = requests.get(provider_endpoints[service], headers=headers, timeout=15)
+            resp.raise_for_status()
+            return {"success": True, "status": "active"}
+
+        if service == "custom":
+            endpoint = key.extra_data.get("endpoint", "")
+            if not endpoint:
+                return {"success": False, "status": "error", "error": "Custom API requires an endpoint in extra data"}
+            import requests
+
+            headers = {"Authorization": f"Bearer {api_key}"}
+            resp = requests.get(endpoint, headers=headers, timeout=15)
+            resp.raise_for_status()
+            return {"success": True, "status": "active"}
+
+        return {"success": False, "status": "error", "error": f"Testing not implemented for {service}"}
+    except HttpError as exc:
+        return {"success": False, "status": "error", "error": f"Google API error: {exc.reason or exc.status_code}"}
+    except Exception as exc:
+        return {"success": False, "status": "error", "error": str(exc)}

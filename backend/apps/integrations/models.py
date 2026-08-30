@@ -11,7 +11,12 @@ from config.security import decrypt_secret, encrypt_secret, is_encrypted
 
 
 class IntegrationConnection(models.Model):
-    """Tracks an external service connection for a user."""
+    """Tracks an external service connection for a user.
+
+    A user may have multiple connections for the same service (e.g. several
+    Gmail accounts or several bank accounts). Tokens are stored here instead
+    of on the User model so each account can be synced independently.
+    """
 
     SERVICE_CHOICES = [
         ("gmail", "Gmail"),
@@ -19,6 +24,7 @@ class IntegrationConnection(models.Model):
         ("plaid", "Plaid (Banking)"),
         ("kijiji", "Kijiji"),
         ("jira", "Jira"),
+        ("email", "Email (IMAP)"),
     ]
     STATUS_CHOICES = [
         ("active", "Active"),
@@ -34,7 +40,17 @@ class IntegrationConnection(models.Model):
         related_name="integration_connections",
     )
     service = models.CharField(max_length=32, choices=SERVICE_CHOICES)
+    account_label = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Human-readable label for this account (e.g. email address or bank name).",
+    )
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="active")
+    is_active = models.BooleanField(default=True)
+    access_token = models.TextField(blank=True, default="")
+    refresh_token = models.TextField(blank=True, default="")
+    extra_data = models.JSONField(blank=True, default=dict)
     last_synced = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default="")
     items_synced = models.IntegerField(default=0)
@@ -42,11 +58,12 @@ class IntegrationConnection(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("user", "service")
+        unique_together = ("user", "service", "account_label")
         ordering = ["-updated_at"]
 
     def __str__(self):
-        return f"{self.user} — {self.get_service_display()} ({self.status})"
+        label = self.account_label or self.get_service_display()
+        return f"{self.user} — {label} ({self.status})"
 
 
 class SyncLog(models.Model):
@@ -70,6 +87,121 @@ class SyncLog(models.Model):
     def __str__(self):
         status = "OK" if self.success else "FAIL"
         return f"{self.connection} sync {status} @ {self.started_at}"
+
+
+class ApiKeyIntegration(models.Model):
+    """User-managed API key credentials for external integrations.
+
+    Unlike OAuth-based IntegrationConnection records, these are manually
+    entered API keys / secrets / tokens that the user can add, edit, delete,
+    and test from the Integrations dashboard.
+    """
+
+    SERVICE_CHOICES = [
+        ("plaid", "Plaid"),
+        ("gmail", "Gmail / Google API"),
+        ("google_calendar", "Google Calendar"),
+        ("canva", "Canva"),
+        ("jira", "Jira"),
+        ("openai", "OpenAI"),
+        ("anthropic", "Anthropic"),
+        ("nvidia", "NVIDIA NIM"),
+        ("custom", "Custom API"),
+    ]
+    STATUS_CHOICES = [
+        ("unknown", "Unknown"),
+        ("active", "Active"),
+        ("error", "Error"),
+        ("disabled", "Disabled"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="api_key_integrations",
+    )
+    service = models.CharField(max_length=32, choices=SERVICE_CHOICES)
+    label = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Human-readable label for this API key set.",
+    )
+    api_key = models.TextField(blank=True, default="")
+    api_secret = models.TextField(blank=True, default="")
+    extra_data = models.JSONField(blank=True, default=dict)
+    is_active = models.BooleanField(default=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="unknown")
+    last_tested = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def save(self, *args, **kwargs):
+        if self.api_key and not is_encrypted(self.api_key):
+            self.api_key = encrypt_secret(self.api_key)
+        if self.api_secret and not is_encrypted(self.api_secret):
+            self.api_secret = encrypt_secret(self.api_secret)
+        super().save(*args, **kwargs)
+
+    @property
+    def decrypted_api_key(self) -> str:
+        return decrypt_secret(self.api_key) if self.api_key else ""
+
+    @property
+    def decrypted_api_secret(self) -> str:
+        return decrypt_secret(self.api_secret) if self.api_secret else ""
+
+    def __str__(self):
+        label = self.label or self.get_service_display()
+        return f"{self.user} — {label} ({self.status})"
+
+
+class IntegrationLog(models.Model):
+    """Generic state/event log for any integration (OAuth or API key)."""
+
+    LEVEL_CHOICES = [
+        ("info", "Info"),
+        ("success", "Success"),
+        ("warning", "Warning"),
+        ("error", "Error"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="integration_logs",
+    )
+    service = models.CharField(max_length=32)
+    connection = models.ForeignKey(
+        IntegrationConnection,
+        on_delete=models.CASCADE,
+        related_name="integration_logs",
+        null=True,
+        blank=True,
+    )
+    api_key = models.ForeignKey(
+        ApiKeyIntegration,
+        on_delete=models.CASCADE,
+        related_name="integration_logs",
+        null=True,
+        blank=True,
+    )
+    level = models.CharField(max_length=16, choices=LEVEL_CHOICES, default="info")
+    message = models.TextField()
+    metadata = models.JSONField(blank=True, default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.service} [{self.level}] {self.created_at}"
 
 
 class LLMConfiguration(models.Model):

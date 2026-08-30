@@ -55,15 +55,16 @@ def classify_transaction(name: str = "", category: Any = None, amount: float = 0
     return "general"
 
 
-def index_plaid_transactions(user, days: int = 30, count: int = 100) -> Dict[str, Any]:
+def index_plaid_transactions(user, connection=None, days: int = 30, count: int = 100) -> Dict[str, Any]:
     from apps.data_streams.models import DataStream
     from apps.document_chunks.models import DocumentChunk
     from apps.users.services import PlaidClient
 
-    if not getattr(user, "plaid_access_token", None):
+    access_token = connection.access_token if connection else getattr(user, "plaid_access_token", None)
+    if not access_token:
         return {"created": 0, "skipped": 0, "error": "Plaid not connected"}
 
-    plaid = PlaidClient(user)
+    plaid = PlaidClient(user, connection=connection)
     end = datetime.now()
     start = end - timedelta(days=days)
     try:
@@ -72,10 +73,11 @@ def index_plaid_transactions(user, days: int = 30, count: int = 100) -> Dict[str
         logger.error(f"Failed to fetch Plaid transactions for clustering: {e}")
         return {"created": 0, "skipped": 0, "error": str(e)}
 
+    label = connection.account_label if connection else "Plaid"
     stream, _ = DataStream.objects.get_or_create(
         user=user,
         source_type="plaid",
-        defaults={"payload": {"source": "plaid"}},
+        defaults={"payload": {"source": "plaid", "account_label": label}},
     )
 
     created = 0
@@ -108,18 +110,23 @@ def index_plaid_transactions(user, days: int = 30, count: int = 100) -> Dict[str
             f"Category: {category}\n"
         ).strip()
 
+        metadata = {
+            "transaction_id": tx_id,
+            "name": name,
+            "amount": amount,
+            "date": date,
+            "category": category,
+            "source_type": "plaid",
+            "account_label": label,
+        }
+        if connection:
+            metadata["connection_id"] = str(connection.id)
+
         DocumentChunk.objects.create(
             stream=stream,
             content=content,
             cluster_category=label,
-            metadata={
-                "transaction_id": tx_id,
-                "name": name,
-                "amount": amount,
-                "date": date,
-                "category": category,
-                "source_type": "plaid",
-            },
+            metadata=metadata,
         )
         created += 1
 

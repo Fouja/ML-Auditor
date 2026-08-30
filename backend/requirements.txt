@@ -58,3 +58,6 @@ feedparser==6.0.11
 
 # MCP (Model Context Protocol) server
 mcp==2.0.0
+
+# Knowledge graph generation for codebase introspection
+graphifyy==0.9.48

@@ -17,19 +17,43 @@ GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 class GmailClient(BaseOAuthClient):
     """
     Gmail API client for reading and sending emails.
+
+    Supports both the legacy single-token-per-user mode (reading from
+    ``user.google_access_token``) and the new multi-account mode via an
+    ``IntegrationConnection`` instance.
     """
 
+    def __init__(self, user, connection=None):
+        self.connection = connection
+        super().__init__(user)
+
     def _get_access_token(self) -> Optional[str]:
+        if self.connection:
+            return self.connection.access_token
         return self.user.google_access_token
+
+    def _get_refresh_token(self) -> Optional[str]:
+        if self.connection:
+            return self.connection.refresh_token
+        return self.user.google_refresh_token
 
     def _get_token_field(self) -> str:
         return "google_access_token"
+
+    def _save_access_token(self, token: str):
+        if self.connection:
+            self.connection.access_token = token
+            self.connection.save(update_fields=["access_token"])
+        else:
+            self.user.google_access_token = token
+            self.user.save(update_fields=["google_access_token"])
 
     def refresh_token(self) -> bool:
         """Refresh Google OAuth token using refresh_token."""
         from requests import post as requests_post
 
-        if not self.user.google_refresh_token:
+        refresh_token = self._get_refresh_token()
+        if not refresh_token:
             logger.warning(f"No refresh token for user {self.user.id}")
             return False
 
@@ -39,15 +63,14 @@ class GmailClient(BaseOAuthClient):
                 data={
                     "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
                     "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
-                    "refresh_token": self.user.google_refresh_token,
+                    "refresh_token": refresh_token,
                     "grant_type": "refresh_token",
                 },
                 timeout=10,
             )
             resp.raise_for_status()
             token_data = resp.json()
-            self.user.google_access_token = token_data["access_token"]
-            self.user.save(update_fields=["google_access_token"])
+            self._save_access_token(token_data["access_token"])
             self._setup_session()
             logger.info(f"Refreshed Gmail token for user {self.user.id}")
             return True

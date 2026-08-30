@@ -54,7 +54,7 @@ services:
       - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
       - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
       - DJANGO_CHANNELS_LAYERS=redis://redis:6379/3
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
       - LOG_DIR=/var/log/ml-auditor/backend
       - FRONTEND_LOG_DIR=/var/log/ml-auditor/frontend
       - NIM_API_KEY=${NIM_API_KEY:-}
@@ -69,7 +69,7 @@ services:
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
       - ELASTIC_APM_SERVICE_NAME=ml-auditor-backend
       - ELASTIC_APM_SERVER_URL=http://apm-server:8200
-      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-false}
       - WEB_TOOLS_URL=http://web-tools:8090
       - JC_URL=http://jobchameleon:8787
       - JC_MCP_URL=http://jobchameleon:8788/mcp
@@ -101,8 +101,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
     command: >
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
@@ -131,7 +129,7 @@ services:
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
       - ELASTIC_APM_SERVICE_NAME=ml-auditor-backend
       - ELASTIC_APM_SERVER_URL=http://apm-server:8200
-      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-false}
     volumes:
       - ./backend:/app
       - ./logs/backend:/var/log/ml-auditor/backend
@@ -173,7 +171,7 @@ services:
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
       - ELASTIC_APM_SERVICE_NAME=ml-auditor-celery-beat
       - ELASTIC_APM_SERVER_URL=http://apm-server:8200
-      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-false}
     volumes:
       - ./backend:/app
       - ./logs/backend:/var/log/ml-auditor/backend
@@ -210,6 +208,8 @@ services:
       - /app/.next
     depends_on:
       - backend
+    command: >
+      sh -c "npm run dev -- --webpack"
 
   # Web Tools Microservice (Agent-Reach: web read/search/RSS)
   web-tools:
@@ -254,7 +254,7 @@ services:
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/api/integrations/oauth/google/callback}
       - ELASTIC_APM_SERVICE_NAME=ml-auditor-mcp-server
       - ELASTIC_APM_SERVER_URL=http://apm-server:8200
-      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-true}
+      - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-false}
     ports:
       - "8100:8100"
     volumes:
@@ -331,6 +331,7 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     container_name: mlauditor_elasticsearch
+    profiles: ["monitoring"]
     restart: unless-stopped
     environment:
       - discovery.type=single-node
@@ -339,7 +340,7 @@ services:
       # apm-data ES plugin: installs APM index/component templates + ingest
       # pipelines so APM Server can run without Fleet or stack security.
       - xpack.apm_data.enabled=true
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
       - ELASTIC_PASSWORD=changeme
       - cluster.name=ml-auditor-logs
       - bootstrap.memory_lock=true
@@ -362,6 +363,7 @@ services:
   logstash:
     image: docker.elastic.co/logstash/logstash:8.13.4
     container_name: mlauditor_logstash
+    profiles: ["monitoring"]
     restart: unless-stopped
     environment:
       - LS_JAVA_OPTS=-Xms256m -Xmx256m
@@ -381,6 +383,7 @@ services:
   kibana:
     image: docker.elastic.co/kibana/kibana:8.13.4
     container_name: mlauditor_kibana
+    profiles: ["monitoring"]
     restart: unless-stopped
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
@@ -401,6 +404,7 @@ services:
   apm-server:
     image: docker.elastic.co/apm/apm-server:8.13.4
     container_name: mlauditor_apm_server
+    profiles: ["monitoring"]
     restart: unless-stopped
     command: >
       apm-server -e -strict.perms=false
@@ -429,6 +433,7 @@ services:
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.13.4
     container_name: mlauditor_filebeat
+    profiles: ["monitoring"]
     restart: unless-stopped
     user: root
     command: filebeat -e -strict.perms=false
@@ -446,6 +451,7 @@ services:
   metricbeat:
     image: docker.elastic.co/beats/metricbeat:8.13.4
     container_name: mlauditor_metricbeat
+    profiles: ["monitoring"]
     restart: unless-stopped
     user: root
     command: metricbeat -e -strict.perms=false
@@ -464,10 +470,11 @@ services:
         condition: service_healthy
 
   # One-off Metricbeat setup: loads built-in Kibana dashboards and ML jobs.
-  # Run manually after Kibana is healthy: docker compose up metricbeat-setup
+  # Run manually after Kibana is healthy: docker compose --profile monitoring up metricbeat-setup
   metricbeat-setup:
     image: docker.elastic.co/beats/metricbeat:8.13.4
     container_name: mlauditor_metricbeat_setup
+    profiles: ["monitoring"]
     restart: "no"
     user: root
     command: >

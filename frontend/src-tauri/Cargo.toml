@@ -1,6 +1,6 @@
 [package]
 name = "ml-auditor-desktop"
-version = "0.1.0"
+version = "0.6.9"
 description = "ML-Auditor desktop app — full-stack AI command center"
 authors = ["Fouja"]
 license = "MIT"

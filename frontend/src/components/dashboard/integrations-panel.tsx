@@ -23,6 +23,9 @@ import {
   PlaidAccount,
   PlaidTransaction,
 } from '@/types';
+import { ApiKeyManager } from './api-key-manager';
+import { IntegrationLogs } from './integration-logs';
+import { HowItWorks } from './how-it-works';
 
 // ─── Status badges ──────────────────────────────────────────────────
 
@@ -1233,6 +1236,21 @@ export function IntegrationsPanel() {
           <JiraSection connected={status?.jira?.connected ?? false} />
           <KijijiSection />
         </div>
+      </div>
+
+      {/* API key management */}
+      <div>
+        <SectionHeading>API Key Manager</SectionHeading>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <ApiKeyManager />
+          <IntegrationLogs />
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div>
+        <SectionHeading>How It Works</SectionHeading>
+        <HowItWorks />
       </div>
     </div>
   );

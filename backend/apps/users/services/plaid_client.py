@@ -22,16 +22,50 @@ PLAID_ENV_URLS = {
 class PlaidClient(BaseOAuthClient):
     """
     Plaid API client for accessing bank accounts and transactions.
+
+    Supports both the legacy single-token-per-user mode (reading from
+    ``user.plaid_access_token``) and the new multi-account mode via an
+    ``IntegrationConnection`` instance.
     """
 
-    def __init__(self, user):
+    def __init__(self, user=None, connection=None):
+        self.connection = connection
         super().__init__(user)
         self.env = getattr(settings, "PLAID_ENV", "sandbox")
         self.base_url = PLAID_ENV_URLS.get(self.env, PLAID_ENV_URLS["sandbox"])
         self.client_id = getattr(settings, "PLAID_CLIENT_ID", "")
         self.secret = getattr(settings, "PLAID_SECRET", "")
 
+    @classmethod
+    def with_credentials(cls, client_id: str, secret: str, environment: str = "sandbox"):
+        """Create a standalone client for credential validation (no user)."""
+        client = cls.__new__(cls)
+        client.connection = None
+        client.user = None
+        client.env = environment
+        client.base_url = PLAID_ENV_URLS.get(environment, PLAID_ENV_URLS["sandbox"])
+        client.client_id = client_id
+        client.secret = secret
+        client.session = cls._new_session()
+        return client
+
+    @classmethod
+    def _new_session(cls):
+        import requests
+
+        return requests.Session()
+
+    def health_check(self) -> bool:
+        """Return True if the configured Plaid credentials are valid."""
+        try:
+            self._make_request("POST", "/institutions/get", {"count": 1, "offset": 0, "country_codes": ["US", "CA"]})
+            return True
+        except Exception:
+            return False
+
     def _get_access_token(self) -> Optional[str]:
+        if self.connection:
+            return self.connection.access_token
         return self.user.plaid_access_token
 
     def _get_token_field(self) -> str:

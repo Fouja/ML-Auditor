@@ -9,12 +9,19 @@ from ninja import Query, Router
 from ninja import Schema
 
 from .schemas import (
+    ApiKeyCreateSchema,
+    ApiKeyResponseSchema,
+    ApiKeyTestResponseSchema,
+    ApiKeyUpdateSchema,
     CalendarEventCreateSchema,
     CanvaCompetitorSchema,
     CanvaSearchSchema,
     EmailSendSchema,
     IMAPConfigSchema,
     IMAPSendSchema,
+    IntegrationAccountCreateSchema,
+    IntegrationAccountUpdateSchema,
+    IntegrationLogResponseSchema,
     JiraConfigureSchema,
     JiraSyncSchema,
     KijijiSearchSchema,
@@ -31,18 +38,44 @@ router = Router()
 # ─── Connection status ───────────────────────────────────────────────
 
 
+def _account_list(user, service: str):
+    from .models import IntegrationConnection
+
+    return [
+        {
+            "id": str(conn.id),
+            "label": conn.account_label,
+            "service": conn.service,
+            "status": conn.status,
+            "is_active": conn.is_active,
+            "last_synced": conn.last_synced.isoformat() if conn.last_synced else None,
+            "items_synced": conn.items_synced,
+        }
+        for conn in IntegrationConnection.objects.filter(user=user, service=service, is_active=True)
+    ]
+
+
 @router.get("/status")
 def integration_status(request):
-    """Get status of all integrations."""
+    """Get status of all integrations, including per-account lists for Gmail/Plaid."""
     user = request.auth
+    gmail_accounts = _account_list(user, "gmail")
+    plaid_accounts = _account_list(user, "plaid")
     return {
         "email": {
             "imap_connected": bool(getattr(user, "email_verified", False)),
-            "gmail_connected": bool(user.google_access_token),
+            "gmail_connected": bool(gmail_accounts) or bool(user.google_access_token),
             "provider": user.email_provider or "custom",
         },
+        "gmail": {
+            "connected": bool(gmail_accounts) or bool(user.google_access_token),
+            "accounts": gmail_accounts,
+        },
         "calendar": {"connected": bool(user.google_access_token)},
-        "plaid": {"connected": bool(getattr(user, "plaid_verified", False))},
+        "plaid": {
+            "connected": bool(plaid_accounts) or bool(getattr(user, "plaid_verified", False)),
+            "accounts": plaid_accounts,
+        },
         "canva": {"connected": bool(user.canva_access_token)},
         "kijiji": {"connected": True},
         "jira": {"connected": bool(user.jira_site_url)},
@@ -63,6 +96,126 @@ def set_web_tools_preference(request, payload: WebToolsPreferenceSchema):
     user.web_tools_enabled = bool(payload.enabled)
     user.save(update_fields=["web_tools_enabled"])
     return {"enabled": user.web_tools_enabled}
+
+
+# ─── Multi-account connections (Gmail / Plaid) ────────────────────────
+
+
+@router.get("/accounts")
+def list_accounts(request, service: str = ""):
+    """List active integration accounts for the current user."""
+    from .models import IntegrationConnection
+
+    user = request.auth
+    qs = IntegrationConnection.objects.filter(user=user, is_active=True)
+    if service:
+        qs = qs.filter(service=service)
+    return {
+        "accounts": [
+            {
+                "id": str(conn.id),
+                "service": conn.service,
+                "label": conn.account_label,
+                "status": conn.status,
+                "is_active": conn.is_active,
+                "last_synced": conn.last_synced.isoformat() if conn.last_synced else None,
+                "items_synced": conn.items_synced,
+                "extra_data": conn.extra_data,
+            }
+            for conn in qs.order_by("service", "account_label")
+        ],
+        "count": qs.count(),
+    }
+
+
+@router.post("/accounts")
+def create_account(request, payload: IntegrationAccountCreateSchema):
+    """Manually add an integration account (mainly for testing/service accounts)."""
+    from .models import IntegrationConnection
+
+    user = request.auth
+    conn, created = IntegrationConnection.objects.get_or_create(
+        user=user,
+        service=payload.service,
+        account_label=payload.account_label,
+        defaults={
+            "access_token": payload.access_token or "",
+            "refresh_token": payload.refresh_token or "",
+            "extra_data": payload.extra_data or {},
+            "status": "active",
+            "is_active": True,
+        },
+    )
+    if not created:
+        if payload.access_token is not None:
+            conn.access_token = payload.access_token
+        if payload.refresh_token is not None:
+            conn.refresh_token = payload.refresh_token
+        if payload.extra_data is not None:
+            conn.extra_data = payload.extra_data
+        conn.is_active = True
+        conn.save(update_fields=["access_token", "refresh_token", "extra_data", "is_active"])
+    return {
+        "id": str(conn.id),
+        "service": conn.service,
+        "label": conn.account_label,
+        "created": created,
+    }
+
+
+@router.patch("/accounts/{account_id}")
+def update_account(request, account_id: str, payload: IntegrationAccountUpdateSchema):
+    """Update an integration account label/active state."""
+    from .models import IntegrationConnection
+
+    user = request.auth
+    conn = IntegrationConnection.objects.get(id=account_id, user=user)
+    if payload.account_label is not None:
+        conn.account_label = payload.account_label
+    if payload.is_active is not None:
+        conn.is_active = payload.is_active
+    if payload.extra_data is not None:
+        conn.extra_data = payload.extra_data
+    conn.save(update_fields=["account_label", "is_active", "extra_data"])
+    return {
+        "id": str(conn.id),
+        "service": conn.service,
+        "label": conn.account_label,
+        "is_active": conn.is_active,
+    }
+
+
+@router.delete("/accounts/{account_id}")
+def delete_account(request, account_id: str):
+    """Disconnect/delete an integration account."""
+    from .models import IntegrationConnection
+
+    user = request.auth
+    conn = IntegrationConnection.objects.get(id=account_id, user=user)
+    conn.is_active = False
+    conn.status = "disconnected"
+    conn.save(update_fields=["is_active", "status"])
+    return {"success": True, "id": account_id}
+
+
+@router.post("/accounts/{account_id}/sync")
+def sync_account(request, account_id: str):
+    """Sync a single integration account on demand."""
+    from .models import IntegrationConnection
+
+    user = request.auth
+    conn = IntegrationConnection.objects.get(id=account_id, user=user, is_active=True)
+    if conn.service == "gmail":
+        from .tasks import sync_gmail_for_user
+
+        result = sync_gmail_for_user.delay(str(user.id), connection_id=str(conn.id))
+        return {"success": True, "task_id": result.id, "service": "gmail"}
+    if conn.service == "plaid":
+        from .tasks import sync_plaid_for_user
+
+        result = sync_plaid_for_user.delay(str(user.id), connection_id=str(conn.id))
+        return {"success": True, "task_id": result.id, "service": "plaid"}
+    return {"success": False, "error": f"Sync not implemented for {conn.service}"}
 
 
 # ─── Mock data (demo content) ───────────────────────────────────────
@@ -333,58 +486,109 @@ def email_send(request, payload: IMAPSendSchema):
 
 @router.get("/gmail/status")
 def gmail_status(request):
+    from .models import IntegrationConnection
+
     user = request.auth
+    active = IntegrationConnection.objects.filter(
+        user=user, service="gmail", is_active=True
+    ).exists()
     return {
-        "connected": bool(user.google_access_token),
+        "connected": active or bool(user.google_access_token),
         "has_refresh_token": bool(user.google_refresh_token),
+        "accounts": _account_list(user, "gmail"),
     }
 
 
 @router.get("/gmail/sync")
-def gmail_sync(request, max_results: int = Query(50)):
+def gmail_sync(request, max_results: int = Query(50), connection_id: str = ""):
     from apps.users.services import GmailClient
+    from .models import IntegrationConnection
 
     user = request.auth
-    if not user.google_access_token:
+    connections = IntegrationConnection.objects.filter(
+        user=user, service="gmail", is_active=True
+    )
+    if not connections.exists() and not user.google_access_token:
         return {"messages": [], "count": 0, "error": "Gmail not connected"}
 
-    try:
-        gmail = GmailClient(user)
-        messages = gmail.get_messages(max_results=max_results)
-        results = []
-        for msg in messages[:max_results]:
-            full = gmail.get_message(msg["id"])
-            headers = full.get("payload", {}).get("headers", [])
-            subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
-            sender = next((h["value"] for h in headers if h["name"] == "From"), "")
-            date = next((h["value"] for h in headers if h["name"] == "Date"), "")
-            results.append(
-                {
-                    "id": msg["id"],
-                    "subject": subject,
-                    "from": sender,
-                    "date": date,
-                    "snippet": full.get("snippet", ""),
-                }
-            )
-        return {"messages": results, "count": len(results)}
-    except Exception as e:
-        import logging
+    if connection_id:
+        connections = connections.filter(id=connection_id)
 
-        logging.getLogger(__name__).error(f"Gmail sync error: {e}")
-        return {"messages": [], "count": 0, "error": f"Gmail sync failed: {str(e)}"}
+    all_messages = []
+    errors = []
+    for conn in connections:
+        try:
+            gmail = GmailClient(user, connection=conn)
+            messages = gmail.get_messages(max_results=max_results)
+            for msg in messages[:max_results]:
+                full = gmail.get_message(msg["id"])
+                headers = full.get("payload", {}).get("headers", [])
+                subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
+                sender = next((h["value"] for h in headers if h["name"] == "From"), "")
+                date = next((h["value"] for h in headers if h["name"] == "Date"), "")
+                all_messages.append(
+                    {
+                        "id": msg["id"],
+                        "subject": subject,
+                        "from": sender,
+                        "date": date,
+                        "snippet": full.get("snippet", ""),
+                        "connection_id": str(conn.id),
+                        "connection_label": conn.account_label,
+                    }
+                )
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).error(f"Gmail sync error for {conn.id}: {e}")
+            errors.append(str(e))
+
+    if not connections.exists() and user.google_access_token:
+        # Legacy fallback
+        try:
+            gmail = GmailClient(user)
+            messages = gmail.get_messages(max_results=max_results)
+            for msg in messages[:max_results]:
+                full = gmail.get_message(msg["id"])
+                headers = full.get("payload", {}).get("headers", [])
+                subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
+                sender = next((h["value"] for h in headers if h["name"] == "From"), "")
+                date = next((h["value"] for h in headers if h["name"] == "Date"), "")
+                all_messages.append(
+                    {
+                        "id": msg["id"],
+                        "subject": subject,
+                        "from": sender,
+                        "date": date,
+                        "snippet": full.get("snippet", ""),
+                    }
+                )
+        except Exception as e:
+            errors.append(str(e))
+
+    return {
+        "messages": all_messages,
+        "count": len(all_messages),
+        "errors": errors if errors else None,
+    }
 
 
 @router.post("/gmail/send")
 def gmail_send(request, payload: EmailSendSchema):
     from apps.users.services import GmailClient
+    from .models import IntegrationConnection
 
     user = request.auth
-    if not user.google_access_token:
+    connection = (
+        IntegrationConnection.objects.filter(
+            user=user, service="gmail", is_active=True
+        ).first()
+    )
+    if not connection and not user.google_access_token:
         return {"success": False, "error": "Gmail not connected"}
 
     try:
-        gmail = GmailClient(user)
+        gmail = GmailClient(user, connection=connection)
         result = gmail.send_message(
             to=payload.to, subject=payload.subject, body=payload.body, cc=payload.cc
         )
@@ -397,23 +601,27 @@ def gmail_send(request, payload: EmailSendSchema):
 
 
 @router.post("/gmail/sync-clusters")
-def gmail_sync_clusters(request):
-    """Synchronously fetch Gmail messages and index them into the RAG store
-    so email clusters populate and the chat can answer mail questions.
+def gmail_sync_clusters(request, connection_id: str = ""):
+    """Synchronously fetch Gmail messages and index them into the RAG store.
 
-    This is the on-demand fallback for when the Celery worker is not running
-    (the OAuth callback queues ``sync_gmail_for_user`` via ``.delay()``, which
-    silently no-ops without a worker).
+    If ``connection_id`` is provided, only that account is synced. Otherwise all
+    active Gmail connections are synced.
     """
+    from .models import IntegrationConnection
+
     user = request.auth
-    if not user.google_access_token:
+    has_connection = IntegrationConnection.objects.filter(
+        user=user, service="gmail", is_active=True
+    ).exists()
+    if not has_connection and not user.google_access_token:
         return {"success": False, "error": "Gmail not connected"}
     try:
         from .tasks import sync_gmail_for_user
 
-        result = sync_gmail_for_user.apply(
-            kwargs={"user_id": str(user.id), "max_results": 100}
-        )
+        kwargs = {"user_id": str(user.id), "max_results": 100}
+        if connection_id:
+            kwargs["connection_id"] = connection_id
+        result = sync_gmail_for_user.apply(kwargs=kwargs)
         return {"success": True, **(result.result or {})}
     except Exception as e:
         import logging
@@ -505,10 +713,16 @@ def plaid_status(request):
     """Plaid connexion status — verified = access token has actually been
     validated against Plaid, not merely present in the DB.
     """
+    from .models import IntegrationConnection
+
     user = request.auth
+    active = IntegrationConnection.objects.filter(
+        user=user, service="plaid", is_active=True
+    ).exists()
     return {
-        "connected": bool(getattr(user, "plaid_verified", False)),
-        "configured": bool(user.plaid_access_token),
+        "connected": active or bool(getattr(user, "plaid_verified", False)),
+        "configured": active or bool(user.plaid_access_token),
+        "accounts": _account_list(user, "plaid"),
     }
 
 
@@ -586,6 +800,25 @@ def plaid_exchange(request, payload: PlaidExchangeSchema):
             user.plaid_access_token = access_token
             user.plaid_verified = True
             user.save(update_fields=["plaid_access_token", "plaid_verified"])
+
+            # Store as a multi-account connection.
+            from .models import IntegrationConnection
+
+            label = payload.account_label or "Plaid"
+            conn, _ = IntegrationConnection.objects.get_or_create(
+                user=user,
+                service="plaid",
+                account_label=label,
+                defaults={
+                    "access_token": access_token,
+                    "status": "active",
+                    "is_active": True,
+                },
+            )
+            conn.access_token = access_token
+            conn.is_active = True
+            conn.save(update_fields=["access_token", "is_active"])
+
             try:
                 from .tasks import sync_plaid_for_user
 
@@ -595,12 +828,12 @@ def plaid_exchange(request, payload: PlaidExchangeSchema):
             try:
                 from .services.transaction_clustering import index_plaid_transactions
 
-                index_plaid_transactions(user)
+                index_plaid_transactions(user, connection=conn)
             except Exception as idx_err:
                 import logging
 
                 logging.getLogger(__name__).warning(f"Plaid index after exchange: {idx_err}")
-        return {"success": True}
+        return {"success": True, "connection_id": str(conn.id) if access_token else None}
     except Exception as e:
         import logging
 
@@ -643,14 +876,25 @@ def plaid_clusters(request):
 
 
 @router.post("/plaid/sync-clusters")
-def plaid_sync_clusters(request):
+def plaid_sync_clusters(request, connection_id: str = ""):
+    from .models import IntegrationConnection
+
     user = request.auth
-    if not user.plaid_access_token:
+    has_connection = IntegrationConnection.objects.filter(
+        user=user, service="plaid", is_active=True
+    ).exists()
+    if not has_connection and not user.plaid_access_token:
         return {"success": False, "error": "Plaid not connected"}
     try:
         from .services.transaction_clustering import index_plaid_transactions
 
-        result = index_plaid_transactions(user)
+        if connection_id:
+            conn = IntegrationConnection.objects.get(
+                id=connection_id, user=user, service="plaid", is_active=True
+            )
+            result = index_plaid_transactions(user, connection=conn)
+        else:
+            result = index_plaid_transactions(user)
         return {"success": True, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -659,24 +903,44 @@ def plaid_sync_clusters(request):
 @router.get("/plaid/accounts")
 def plaid_accounts(request):
     from apps.users.services import PlaidClient
+    from .models import IntegrationConnection
 
     user = request.auth
-    if not user.plaid_access_token:
+    connections = IntegrationConnection.objects.filter(
+        user=user, service="plaid", is_active=True
+    )
+    if not connections.exists() and not user.plaid_access_token:
         return {"accounts": [], "count": 0, "error": "Plaid not connected"}
 
-    try:
-        plaid = PlaidClient(user)
-        accounts = plaid.get_accounts()
-        return {"accounts": accounts, "count": len(accounts)}
-    except Exception as e:
-        import logging
+    all_accounts = []
+    errors = []
+    for conn in connections:
+        try:
+            plaid = PlaidClient(user, connection=conn)
+            accounts = plaid.get_accounts()
+            for acc in accounts:
+                acc["connection_id"] = str(conn.id)
+                acc["connection_label"] = conn.account_label
+            all_accounts.extend(accounts)
+        except Exception as e:
+            import logging
 
-        logging.getLogger(__name__).error(f"Plaid accounts error: {e}")
-        return {
-            "accounts": [],
-            "count": 0,
-            "error": f"Failed to fetch accounts: {str(e)}",
-        }
+            logging.getLogger(__name__).error(f"Plaid accounts error for {conn.id}: {e}")
+            errors.append(str(e))
+
+    if not connections.exists() and user.plaid_access_token:
+        # Legacy fallback
+        try:
+            plaid = PlaidClient(user)
+            all_accounts.extend(plaid.get_accounts())
+        except Exception as e:
+            errors.append(str(e))
+
+    return {
+        "accounts": all_accounts,
+        "count": len(all_accounts),
+        "errors": errors if errors else None,
+    }
 
 
 @router.get("/plaid/transactions")
@@ -684,47 +948,84 @@ def plaid_transactions(request, days: int = Query(30), count: int = Query(100)):
     from datetime import datetime, timedelta
 
     from apps.users.services import PlaidClient
+    from .models import IntegrationConnection
 
     user = request.auth
-    if not user.plaid_access_token:
+    connections = IntegrationConnection.objects.filter(
+        user=user, service="plaid", is_active=True
+    )
+    if not connections.exists() and not user.plaid_access_token:
         return {"transactions": [], "count": 0, "error": "Plaid not connected"}
 
-    try:
-        plaid = PlaidClient(user)
-        end = datetime.now()
-        start = end - timedelta(days=days)
-        transactions = plaid.get_transactions(
-            start_date=start, end_date=end, count=count
-        )
-        return {"transactions": transactions, "count": len(transactions)}
-    except Exception as e:
-        import logging
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    all_transactions = []
+    errors = []
+    for conn in connections:
+        try:
+            plaid = PlaidClient(user, connection=conn)
+            transactions = plaid.get_transactions(start_date=start, end_date=end, count=count)
+            for tx in transactions:
+                tx["connection_id"] = str(conn.id)
+                tx["connection_label"] = conn.account_label
+            all_transactions.extend(transactions)
+        except Exception as e:
+            import logging
 
-        logging.getLogger(__name__).error(f"Plaid transactions error: {e}")
-        return {
-            "transactions": [],
-            "count": 0,
-            "error": f"Failed to fetch transactions: {str(e)}",
-        }
+            logging.getLogger(__name__).error(f"Plaid transactions error for {conn.id}: {e}")
+            errors.append(str(e))
+
+    if not connections.exists() and user.plaid_access_token:
+        # Legacy fallback
+        try:
+            plaid = PlaidClient(user)
+            all_transactions.extend(plaid.get_transactions(start_date=start, end_date=end, count=count))
+        except Exception as e:
+            errors.append(str(e))
+
+    return {
+        "transactions": all_transactions,
+        "count": len(all_transactions),
+        "errors": errors if errors else None,
+    }
 
 
 @router.get("/plaid/balances")
 def plaid_balances(request):
     from apps.users.services import PlaidClient
+    from .models import IntegrationConnection
 
     user = request.auth
-    if not user.plaid_access_token:
+    connections = IntegrationConnection.objects.filter(
+        user=user, service="plaid", is_active=True
+    )
+    if not connections.exists() and not user.plaid_access_token:
         return {"balances": [], "error": "Plaid not connected"}
 
-    try:
-        plaid = PlaidClient(user)
-        balances = plaid.get_balances()
-        return {"balances": balances}
-    except Exception as e:
-        import logging
+    all_balances = []
+    errors = []
+    for conn in connections:
+        try:
+            plaid = PlaidClient(user, connection=conn)
+            balances = plaid.get_balances()
+            for b in balances:
+                b["connection_id"] = str(conn.id)
+                b["connection_label"] = conn.account_label
+            all_balances.extend(balances)
+        except Exception as e:
+            import logging
 
-        logging.getLogger(__name__).error(f"Plaid balances error: {e}")
-        return {"balances": [], "error": f"Failed to fetch balances: {str(e)}"}
+            logging.getLogger(__name__).error(f"Plaid balances error for {conn.id}: {e}")
+            errors.append(str(e))
+
+    if not connections.exists() and user.plaid_access_token:
+        try:
+            plaid = PlaidClient(user)
+            all_balances.extend(plaid.get_balances())
+        except Exception as e:
+            errors.append(str(e))
+
+    return {"balances": all_balances, "errors": errors if errors else None}
 
 
 # ─── Canva ──────────────────────────────────────────────────────────
@@ -1267,6 +1568,28 @@ def google_oauth_callback(request, code: str = "", state: str = "", error: str =
             user.jc_email_provider = "gmail"
             fields.extend(["jc_email_connected", "jc_email_provider"])
             user.save(update_fields=fields)
+
+            # Store as a multi-account connection as well.
+            from .models import IntegrationConnection
+
+            label = user.email or "Gmail"
+            conn, _ = IntegrationConnection.objects.get_or_create(
+                user=user,
+                service="gmail",
+                account_label=label,
+                defaults={
+                    "access_token": access,
+                    "refresh_token": refresh or "",
+                    "status": "active",
+                    "is_active": True,
+                },
+            )
+            conn.access_token = access
+            if refresh:
+                conn.refresh_token = refresh
+            conn.is_active = True
+            conn.save(update_fields=["access_token", "refresh_token", "is_active"])
+
             try:
                 from .tasks import sync_gmail_for_user
 
@@ -1299,3 +1622,162 @@ def canva_oauth_url(request):
 from .llm_api import router as llm_router
 
 router.add_router("/llm-configurations", llm_router)
+
+
+# ─── API Key Integrations ─────────────────────────────────────────────
+
+
+def _mask_key(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "*" * len(value)
+    return value[:4] + "*" * (len(value) - 8) + value[-4:]
+
+
+def _api_key_to_dict(key: "ApiKeyIntegration") -> dict:
+    return {
+        "id": str(key.id),
+        "service": key.service,
+        "label": key.label,
+        "api_key_masked": _mask_key(key.decrypted_api_key),
+        "api_secret_masked": _mask_key(key.decrypted_api_secret),
+        "extra_data": key.extra_data,
+        "is_active": key.is_active,
+        "status": key.status,
+        "last_tested": key.last_tested.isoformat() if key.last_tested else None,
+        "last_error": key.last_error,
+        "created_at": key.created_at.isoformat(),
+        "updated_at": key.updated_at.isoformat(),
+    }
+
+
+@router.get("/api-keys", response=list[ApiKeyResponseSchema])
+def list_api_keys(request):
+    from .models import ApiKeyIntegration
+
+    user = request.auth
+    keys = ApiKeyIntegration.objects.filter(user=user)
+    return [_api_key_to_dict(k) for k in keys]
+
+
+@router.post("/api-keys", response=ApiKeyResponseSchema)
+def create_api_key(request, payload: ApiKeyCreateSchema):
+    from .models import ApiKeyIntegration, IntegrationLog
+
+    user = request.auth
+    key = ApiKeyIntegration.objects.create(
+        user=user,
+        service=payload.service,
+        label=payload.label,
+        api_key=payload.api_key,
+        api_secret=payload.api_secret or "",
+        extra_data=payload.extra_data or {},
+        status="unknown",
+    )
+    IntegrationLog.objects.create(
+        user=user,
+        service=key.service,
+        api_key=key,
+        level="info",
+        message=f"API key '{key.label}' created",
+    )
+    return _api_key_to_dict(key)
+
+
+@router.patch("/api-keys/{key_id}", response=ApiKeyResponseSchema)
+def update_api_key(request, key_id: str, payload: ApiKeyUpdateSchema):
+    from .models import ApiKeyIntegration, IntegrationLog
+
+    user = request.auth
+    key = ApiKeyIntegration.objects.get(id=key_id, user=user)
+    if payload.label is not None:
+        key.label = payload.label
+    if payload.api_key is not None:
+        key.api_key = payload.api_key
+    if payload.api_secret is not None:
+        key.api_secret = payload.api_secret
+    if payload.extra_data is not None:
+        key.extra_data = payload.extra_data
+    if payload.is_active is not None:
+        key.is_active = payload.is_active
+        key.status = "disabled" if not key.is_active else "unknown"
+    key.save()
+    IntegrationLog.objects.create(
+        user=user,
+        service=key.service,
+        api_key=key,
+        level="info",
+        message=f"API key '{key.label}' updated",
+    )
+    return _api_key_to_dict(key)
+
+
+@router.delete("/api-keys/{key_id}")
+def delete_api_key(request, key_id: str):
+    from .models import ApiKeyIntegration, IntegrationLog
+
+    user = request.auth
+    key = ApiKeyIntegration.objects.get(id=key_id, user=user)
+    IntegrationLog.objects.create(
+        user=user,
+        service=key.service,
+        level="warning",
+        message=f"API key '{key.label}' deleted",
+    )
+    key.delete()
+    return {"success": True, "id": key_id}
+
+
+@router.post("/api-keys/{key_id}/test", response=ApiKeyTestResponseSchema)
+def test_api_key(request, key_id: str):
+    from django.utils import timezone
+
+    from .models import ApiKeyIntegration, IntegrationLog
+    from .tasks import test_api_key_integration
+
+    user = request.auth
+    key = ApiKeyIntegration.objects.get(id=key_id, user=user)
+    try:
+        result = test_api_key_integration(user, key)
+    except Exception as exc:
+        result = {"success": False, "status": "error", "error": str(exc)}
+
+    key.status = "active" if result.get("success") else "error"
+    key.last_tested = timezone.now()
+    key.last_error = result.get("error") or ""
+    key.save(update_fields=["status", "last_tested", "last_error"])
+
+    IntegrationLog.objects.create(
+        user=user,
+        service=key.service,
+        api_key=key,
+        level="success" if result.get("success") else "error",
+        message="API key test " + ("succeeded" if result.get("success") else "failed"),
+        metadata={"error": result.get("error")},
+    )
+    return result
+
+
+# ─── Integration State Logs ───────────────────────────────────────────
+
+
+@router.get("/logs", response=list[IntegrationLogResponseSchema])
+def list_integration_logs(request, service: str = "", limit: int = 50):
+    from .models import IntegrationLog
+
+    user = request.auth
+    qs = IntegrationLog.objects.filter(user=user)
+    if service:
+        qs = qs.filter(service=service)
+    return [
+        {
+            "id": str(log.id),
+            "service": log.service,
+            "level": log.level,
+            "message": log.message,
+            "metadata": log.metadata,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in qs[:limit]
+    ]
