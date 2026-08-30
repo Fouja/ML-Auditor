@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { Sidebar } from './sidebar';
+import { TaskReminderPoller } from '@/components/dashboard/task-reminder-poller';
 import { useUiStore } from '@/stores/uiStore';
 import { cn } from '@/lib/utils';
 import { Menu, X, Home } from 'lucide-react';
@@ -17,6 +18,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background bg-renaissance">
+      <Suspense fallback={null}>
+        <TaskReminderPoller />
+      </Suspense>
       <Sidebar />
       <div className={cn('transition-all', sidebarOpen ? 'md:ml-64' : 'md:ml-0')}>
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border/60 bg-background/80 px-4 backdrop-blur">

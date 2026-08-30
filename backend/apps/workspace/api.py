@@ -14,6 +14,7 @@ from .models import (
     NewsFeed,
     Note,
     Task,
+    TaskReminder,
     Trigger,
     WorkspaceWidget,
 )
@@ -119,6 +120,69 @@ def move_task(request, task_id: str, status: str, position: int = 0):
         return {"success": True, "status": status}
     except Task.DoesNotExist:
         raise HttpError(404, "Task not found")
+
+
+@router.get("/tasks/reminders")
+def task_reminders(request):
+    """Return pending task reminders for the current user.
+
+    - boot: tasks due today that have not been notified yet today.
+    - one_hour: tasks due within the next hour that have not had their
+      one-hour reminder sent.
+    """
+    from datetime import timedelta
+
+    user = request.auth
+    now = timezone.now()
+    today = now.date()
+    one_hour_later = now + timedelta(hours=1)
+
+    # Tasks due today (not done) that haven't had a boot reminder today.
+    boot_tasks = Task.objects.filter(
+        user=user,
+        status__in=[Task.Status.TODO, Task.Status.IN_PROGRESS, Task.Status.REVIEW],
+        due_date__date=today,
+    ).select_related("reminder")
+
+    boot_reminders = []
+    for task in boot_tasks:
+        reminder, _ = TaskReminder.objects.get_or_create(user=user, task=task)
+        if reminder.boot_reminder_sent != today:
+            boot_reminders.append({
+                "id": str(task.id),
+                "title": task.title,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
+                "type": "boot",
+            })
+            reminder.boot_reminder_sent = today
+            reminder.save(update_fields=["boot_reminder_sent"])
+
+    # Tasks due within the next hour (not done) that haven't had a one-hour reminder.
+    one_hour_tasks = Task.objects.filter(
+        user=user,
+        status__in=[Task.Status.TODO, Task.Status.IN_PROGRESS, Task.Status.REVIEW],
+        due_date__gt=now,
+        due_date__lte=one_hour_later,
+    ).select_related("reminder")
+
+    one_hour_reminders = []
+    for task in one_hour_tasks:
+        reminder, _ = TaskReminder.objects.get_or_create(user=user, task=task)
+        # Only send once per task (or once per day if you prefer more granular).
+        if reminder.one_hour_reminder_sent is None or reminder.one_hour_reminder_sent.date() != today:
+            one_hour_reminders.append({
+                "id": str(task.id),
+                "title": task.title,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
+                "type": "one_hour",
+            })
+            reminder.one_hour_reminder_sent = now
+            reminder.save(update_fields=["one_hour_reminder_sent"])
+
+    return {
+        "boot": boot_reminders,
+        "one_hour": one_hour_reminders,
+    }
 
 
 # ─── Calendar Events ─────────────────────────────────────────────────

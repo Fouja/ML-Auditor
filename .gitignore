@@ -95,3 +95,7 @@ desktop-data/
 
 # Local installer package (built on demand)
 /ML-Auditor_*.deb
+
+# Notification sound asset (downloaded/generated during build)
+frontend/public/notification.mp3
+frontend/src-tauri/assets/notification.mp3

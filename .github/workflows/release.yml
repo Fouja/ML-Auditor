@@ -48,6 +48,13 @@ jobs:
         working-directory: ./frontend
         run: npm ci --legacy-peer-deps
 
+      - name: Download notification sound
+        run: |
+          mkdir -p frontend/src-tauri/assets
+          mkdir -p frontend/public
+          curl -L -o frontend/src-tauri/assets/notification.mp3 "https://archive.org/download/classical-music-mix-by-various-artists/18%20-%20Beethoven%20-%20Fur%20Elise.mp3"
+          cp frontend/src-tauri/assets/notification.mp3 frontend/public/notification.mp3
+
       - name: Install system dependencies
         run: |
           sudo apt-get update

@@ -21,6 +21,8 @@ use anyhow::Context;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder};
 use tauri::{Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
@@ -231,6 +233,22 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+/// Show the main window from the tray menu.
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    Ok(())
+}
+
+/// Exit the application from the tray menu.
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 // ---------------------------------------------------------------------------
 // 3. App setup
 // ---------------------------------------------------------------------------
@@ -246,6 +264,11 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart"]),
+        ))
         .setup(|app| {
             // Create the per-user data directory.
             let data_dir = app
@@ -272,42 +295,57 @@ pub fn run() {
             };
             app.manage(state);
 
+            // Request notification permission and enable autostart.
+            let _ = app.notification().permission_state();
+            let autostart_manager = app.autolaunch();
+            let _ = autostart_manager.enable();
+
             // Show the main window now that the backend is healthy.
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
 
-            // Optional system tray icon.
-            if let Ok(menu) = Menu::with_id_and_items(app.app_handle(), "tray", &[&MenuItem::with_id(
+            // System tray icon with Show / Exit menu.
+            let tray_menu = Menu::with_id_and_items(
                 app.app_handle(),
-                "quit",
-                "Quit",
-                true,
-                None::<&str>,
-            )?]) {
-                let _ = TrayIconBuilder::new()
-                    .menu(&menu)
-                    .on_menu_event(|app, event| {
-                        if event.id().as_ref() == "quit" {
-                            app.exit(0);
-                        }
-                    })
-                    .on_tray_icon_event(|tray, event| {
-                        if let tauri::tray::TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            ..
-                        } = event
-                        {
-                            let app = tray.app_handle();
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    })
-                    .build(app.app_handle());
+                "tray",
+                &[
+                    &MenuItem::with_id(app.app_handle(), "show", "Show", true, None::<&str>)?,
+                    &MenuItem::with_id(app.app_handle(), "exit", "Exit", true, None::<&str>)?,
+                ],
+            )?;
+            let mut tray_builder = TrayIconBuilder::new().menu(&tray_menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
             }
+            let _ = tray_builder
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "exit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app.app_handle());
 
             Ok(())
         })
@@ -323,6 +361,8 @@ pub fn run() {
             is_desktop_mode,
             reset_local_database,
             check_for_app_update,
+            show_main_window,
+            exit_app,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

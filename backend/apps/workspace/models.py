@@ -60,6 +60,36 @@ class Task(models.Model):
         return f"[{self.status}] {self.title}"
 
 
+class TaskReminder(models.Model):
+    """Tracks reminder notifications sent for a task.
+
+    - boot_reminder_sent: date when the daily "due today" reminder was sent.
+    - one_hour_reminder_sent: datetime when the "due in 1 hour" reminder was sent.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="workspace_task_reminders",
+    )
+    task = models.OneToOneField(
+        Task,
+        on_delete=models.CASCADE,
+        related_name="reminder",
+    )
+    boot_reminder_sent = models.DateField(null=True, blank=True)
+    one_hour_reminder_sent = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"Reminder for {self.task.title}"
+
+
 class CalendarEvent(models.Model):
     """Calendar event model."""
 

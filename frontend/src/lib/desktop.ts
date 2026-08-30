@@ -52,3 +52,66 @@ export async function checkForAppUpdate(): Promise<string> {
   }
   return invoke<string>('check_for_app_update');
 }
+
+// ─── Notifications ──────────────────────────────────────────────────
+
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (!isTauriAvailable()) return false;
+  try {
+    const { requestPermission } = await import('@tauri-apps/plugin-notification');
+    const state = await requestPermission();
+    return state === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+export async function sendNotification(title: string, body: string): Promise<void> {
+  if (!isTauriAvailable()) return;
+  try {
+    const { sendNotification } = await import('@tauri-apps/plugin-notification');
+    sendNotification({ title, body });
+  } catch {
+    // Notifications not available in this environment.
+  }
+}
+
+// ─── Autostart ──────────────────────────────────────────────────────
+
+export async function enableAutostart(): Promise<void> {
+  if (!isTauriAvailable()) return;
+  try {
+    const { enable } = await import('@tauri-apps/plugin-autostart');
+    await enable();
+  } catch {
+    // Autostart plugin unavailable.
+  }
+}
+
+export async function isAutostartEnabled(): Promise<boolean> {
+  if (!isTauriAvailable()) return false;
+  try {
+    const { isEnabled } = await import('@tauri-apps/plugin-autostart');
+    return await isEnabled();
+  } catch {
+    return false;
+  }
+}
+
+// ─── Notification sound ─────────────────────────────────────────────
+
+let notificationAudio: HTMLAudioElement | null = null;
+
+export async function playNotificationSound(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!notificationAudio) {
+      notificationAudio = new Audio('/notification.mp3');
+      notificationAudio.volume = 0.6;
+    }
+    notificationAudio.currentTime = 0;
+    await notificationAudio.play();
+  } catch {
+    // Audio playback failed (e.g. no user interaction yet).
+  }
+}

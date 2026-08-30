@@ -39,7 +39,8 @@
         "depends": []
       }
     },
-    "externalBin": ["binaries/ml-auditor-backend"]
+    "externalBin": ["binaries/ml-auditor-backend"],
+    "resources": ["assets"]
   },
   "plugins": {
     "deep-link": {
