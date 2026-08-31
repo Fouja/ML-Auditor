@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -24,9 +25,10 @@ import {
   resetLocalDatabase,
   checkForAppUpdate,
 } from '@/lib/desktop';
-import { Loader2, Trash2, RefreshCw, Monitor } from 'lucide-react';
+import { Loader2, Trash2, RefreshCw, Monitor, ArrowLeft } from 'lucide-react';
 
 export default function DesktopPage() {
+  const router = useRouter();
   const [desktop, setDesktop] = useState<boolean | null>(null);
   const [backendUrl, setBackendUrl] = useState<string>('');
   const [resetOpen, setResetOpen] = useState(false);
@@ -87,6 +89,12 @@ export default function DesktopPage() {
 
   return (
     <div className="container mx-auto max-w-3xl py-12">
+      <div className="mb-4">
+        <Button variant="ghost" onClick={() => router.back()} className="pl-0">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back
+        </Button>
+      </div>
       <div className="mb-8 flex items-center gap-3">
         <Monitor className="h-8 w-8" />
         <div>

@@ -209,9 +209,8 @@ async fn reset_local_database(
     reset_result
 }
 
-/// Manual update check + install invoked from the settings UI.
-#[tauri::command]
-async fn check_for_app_update(app: tauri::AppHandle) -> Result<String, String> {
+/// Check for updates from the configured GitHub release endpoint.
+async fn check_and_install_update(app: &tauri::AppHandle, silent: bool) -> Result<Option<String>, String> {
     let updater = app
         .updater_builder()
         .build()
@@ -224,11 +223,26 @@ async fn check_for_app_update(app: tauri::AppHandle) -> Result<String, String> {
                 .download_and_install(|_chunk, _content| {}, || {})
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(format!(
+            Ok(Some(format!(
                 "Update {} downloaded. Restart the app to apply it.",
                 latest
-            ))
+            )))
         }
+        None => {
+            if !silent {
+                Ok(Some("You are on the latest version.".to_string()))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+}
+
+/// Manual update check + install invoked from the settings UI.
+#[tauri::command]
+async fn check_for_app_update(app: tauri::AppHandle) -> Result<String, String> {
+    match check_and_install_update(&app, false).await? {
+        Some(msg) => Ok(msg),
         None => Ok("You are on the latest version.".to_string()),
     }
 }
@@ -305,6 +319,12 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
+
+            // Check for app updates from GitHub releases in the background.
+            let app_handle = app.app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = check_and_install_update(&app_handle, true).await;
+            });
 
             // System tray icon with Show / Exit menu.
             let tray_menu = Menu::with_id_and_items(

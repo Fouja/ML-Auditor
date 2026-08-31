@@ -1,16 +1,26 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { colors, spacing, borderRadius, shadows } from '../theme';
 
 export function SettingsScreen() {
+  const navigation = useNavigation();
   const { user, logout } = useAuthStore();
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backArrow}>←</Text>
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
           <Text style={styles.title}>Settings</Text>
         </View>
 
@@ -48,6 +58,22 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.lg,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    alignSelf: 'flex-start',
+  },
+  backArrow: {
+    fontSize: 20,
+    color: colors.primary,
+    marginRight: spacing.xs,
+  },
+  backText: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '600',
   },
   title: {
     fontSize: 28,
