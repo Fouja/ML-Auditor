@@ -12,14 +12,27 @@ export interface RegisterData {
   password: string;
 }
 
+interface TokenPayload {
+  access: string;
+  refresh: string;
+}
+
+async function buildSession(payload: TokenPayload): Promise<{ tokens: Tokens; user: User }> {
+  const tokens: Tokens = { access: payload.access, refresh: payload.refresh };
+  const res = await api.get('/users/me', {
+    headers: { Authorization: `Bearer ${payload.access}` },
+  });
+  return { tokens, user: res.data };
+}
+
 export async function login(credentials: LoginCredentials): Promise<{ tokens: Tokens; user: User }> {
-  const res = await api.post('/users/login', credentials);
-  return res.data;
+  const res = await api.post<TokenPayload>('/users/login', credentials);
+  return buildSession(res.data);
 }
 
 export async function register(data: RegisterData): Promise<{ tokens: Tokens; user: User }> {
-  const res = await api.post('/users/register', data);
-  return res.data;
+  const res = await api.post<TokenPayload>('/users/register', data);
+  return buildSession(res.data);
 }
 
 export async function getMe(): Promise<User> {

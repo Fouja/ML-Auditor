@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaperProvider } from 'react-native-paper';
 import { useAuthStore } from '../store/authStore';
 import { registerForPushNotificationsAsync } from '../utils/notifications';
+import { getMe } from '../api/auth';
 import { LoginScreen } from '../screens/LoginScreen';
 import { ChatScreen } from '../screens/ChatScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
@@ -88,7 +89,7 @@ function MainTabs() {
 }
 
 function RootNavigator() {
-  const { isAuthenticated, isLoading, hydrate } = useAuthStore();
+  const { isAuthenticated, isLoading, hydrate, setUser } = useAuthStore();
 
   useEffect(() => {
     hydrate();
@@ -97,8 +98,11 @@ function RootNavigator() {
   useEffect(() => {
     if (isAuthenticated) {
       registerForPushNotificationsAsync();
+      getMe()
+        .then((profile) => setUser(profile))
+        .catch(() => {});
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, setUser]);
 
   if (isLoading) {
     return (

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ArgusOrb } from '../components/ArgusOrb';
-import { sendMessage } from '../api/chat';
+import { sendMessage, getChatHistory } from '../api/chat';
 import { ChatMessage } from '../types';
 import { colors, spacing, borderRadius, shadows } from '../theme';
 
@@ -39,6 +39,28 @@ export function ChatScreen() {
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const history = await getChatHistory();
+        if (history && history.length > 0) {
+          const loaded: ChatMessage[] = history.map((item, index) => ({
+            id: `hist-${index}`,
+            role: item.role === 'user' ? 'user' : 'assistant',
+            content: item.content,
+            timestamp: new Date(),
+          }));
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id === 'welcome'),
+            ...loaded,
+          ]);
+        }
+      } catch {
+        // keep welcome message if history unavailable
+      }
+    })();
+  }, []);
 
   const handleSend = useCallback(async () => {
     if (!input.trim()) return;

@@ -28,11 +28,17 @@ const PRIORITY_COLORS: Record<string, string> = {
   critical: colors.error,
 };
 
+const STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'done'];
+const PRIORITY_OPTIONS = ['low', 'medium', 'high', 'critical'];
+
 export function TasksScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editStatus, setEditStatus] = useState<string>('todo');
+  const [editPriority, setEditPriority] = useState<string>('medium');
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -61,25 +67,70 @@ export function TasksScreen() {
     loadTasks();
   };
 
+  const openEdit = (task: Task) => {
+    setEditingTask(task);
+    setEditStatus(task.status);
+    setEditPriority(task.priority);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingTask) return;
+    await updateTask(editingTask.id, { status: editStatus as any, priority: editPriority as any });
+    setEditingTask(null);
+    loadTasks();
+  };
+
+  const quickSetStatus = async (id: string, status: string) => {
+    await updateTask(id, { status: status as any });
+    loadTasks();
+  };
+
+  const quickSetPriority = async (id: string, priority: string) => {
+    await updateTask(id, { priority: priority as any });
+    loadTasks();
+  };
+
   const renderTask = ({ item }: { item: Task }) => (
     <View style={styles.taskCard}>
       <View style={styles.taskHeader}>
-        <Text style={styles.taskTitle}>{item.title}</Text>
+        <TouchableOpacity style={{ flex: 1 }} onPress={() => openEdit(item)}>
+          <Text style={styles.taskTitle}>{item.title}</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => handleDelete(item.id)}>
           <Text style={styles.deleteText}>Delete</Text>
         </TouchableOpacity>
       </View>
+      <View style={styles.statusRow}>
+        {STATUS_OPTIONS.map((status) => (
+          <TouchableOpacity
+            key={status}
+            onPress={() => quickSetStatus(item.id, status)}
+            style={[
+              styles.statusChip,
+              item.status === status && { backgroundColor: STATUS_COLORS[status] + '30' },
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusChipText,
+                item.status === status && { color: STATUS_COLORS[status], fontWeight: '700' },
+              ]}
+            >
+              {status.replace('_', ' ')}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <View style={styles.taskMeta}>
-        <View style={[styles.badge, { backgroundColor: STATUS_COLORS[item.status] + '30' }]}>
-          <Text style={[styles.badgeText, { color: STATUS_COLORS[item.status] }]}>
-            {item.status.replace('_', ' ')}
-          </Text>
-        </View>
-        <View style={[styles.badge, { backgroundColor: PRIORITY_COLORS[item.priority] + '30' }]}>
+        <TouchableOpacity
+          style={[styles.badge, { backgroundColor: PRIORITY_COLORS[item.priority] + '30' }]}
+          onPress={() => openEdit(item)}
+        >
           <Text style={[styles.badgeText, { color: PRIORITY_COLORS[item.priority] }]}>
             {item.priority}
           </Text>
-        </View>
+        </TouchableOpacity>
+        <Text style={styles.tapHint}>Tap to edit</Text>
       </View>
     </View>
   );
@@ -118,6 +169,66 @@ export function TasksScreen() {
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleCreate}>
                 <Text style={styles.modalButtonText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!editingTask} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Task</Text>
+            <Text style={styles.modalLabel}>Status</Text>
+            <View style={styles.chipGroup}>
+              {STATUS_OPTIONS.map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  onPress={() => setEditStatus(status)}
+                  style={[
+                    styles.pickerChip,
+                    editStatus === status && { backgroundColor: STATUS_COLORS[status] + '40', borderColor: STATUS_COLORS[status] },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.pickerChipText,
+                      editStatus === status && { color: STATUS_COLORS[status], fontWeight: '700' },
+                    ]}
+                  >
+                    {status.replace('_', ' ')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.modalLabel, { marginTop: spacing.md }]}>Priority</Text>
+            <View style={styles.chipGroup}>
+              {PRIORITY_OPTIONS.map((priority) => (
+                <TouchableOpacity
+                  key={priority}
+                  onPress={() => setEditPriority(priority)}
+                  style={[
+                    styles.pickerChip,
+                    editPriority === priority && { backgroundColor: PRIORITY_COLORS[priority] + '40', borderColor: PRIORITY_COLORS[priority] },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.pickerChipText,
+                      editPriority === priority && { color: PRIORITY_COLORS[priority], fontWeight: '700' },
+                    ]}
+                  >
+                    {priority}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={[styles.modalButtons, { marginTop: spacing.lg }]}>
+              <TouchableOpacity style={styles.modalButtonSecondary} onPress={() => setEditingTask(null)}>
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleUpdate}>
+                <Text style={styles.modalButtonText}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -182,9 +293,33 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: 13,
   },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  statusChip: {
+    borderRadius: borderRadius.round,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  statusChipText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
+  },
   taskMeta: {
     flexDirection: 'row',
     gap: spacing.sm,
+    alignItems: 'center',
+  },
+  tapHint: {
+    fontSize: 11,
+    color: colors.textSecondary,
   },
   badge: {
     borderRadius: borderRadius.round,
@@ -213,6 +348,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.md,
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  chipGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  pickerChip: {
+    borderRadius: borderRadius.round,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  pickerChipText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
   },
   input: {
     backgroundColor: colors.background,

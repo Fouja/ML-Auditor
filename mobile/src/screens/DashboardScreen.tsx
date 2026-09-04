@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { getTasks, getEvents, getIntegrationStatus } from '../api/workspace';
 import { colors, spacing, borderRadius, shadows } from '../theme';
@@ -14,8 +15,16 @@ function StatCard({ title, value, color }: { title: string; value: string | numb
   );
 }
 
+const QUICK_ACTIONS = [
+  { label: 'Chat with Argus', target: 'Chat' },
+  { label: 'View Tasks', target: 'Tasks' },
+  { label: 'Check Calendar', target: 'Calendar' },
+  { label: 'Manage Integrations', target: 'Integrations' },
+];
+
 export function DashboardScreen() {
   const user = useAuthStore((s) => s.user);
+  const navigation = useNavigation<any>();
   const [stats, setStats] = useState({ tasks: 0, events: 0, integrations: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -44,8 +53,16 @@ export function DashboardScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
-          <Text style={styles.greeting}>Hello, {user?.first_name || user?.username || 'Argus User'}</Text>
-          <Text style={styles.subtitle}>Your AI command center</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greeting}>Hello, {user?.first_name || user?.username || 'Argus User'}</Text>
+            <Text style={styles.subtitle}>Your AI command center</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => navigation.getParent()?.navigate('Settings')}
+          >
+            <Text style={styles.settingsText}>⚙</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statsGrid}>
@@ -57,9 +74,13 @@ export function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionsGrid}>
-            {['Chat with Argus', 'View Tasks', 'Check Calendar', 'Manage Integrations'].map((action) => (
-              <TouchableOpacity key={action} style={styles.actionCard}>
-                <Text style={styles.actionText}>{action}</Text>
+            {QUICK_ACTIONS.map((action) => (
+              <TouchableOpacity
+                key={action.label}
+                style={styles.actionCard}
+                onPress={() => navigation.navigate(action.target)}
+              >
+                <Text style={styles.actionText}>{action.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -89,6 +110,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textSecondary,
     marginTop: spacing.xs,
+  },
+  settingsButton: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.round,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.md,
+  },
+  settingsText: {
+    fontSize: 20,
+    color: colors.text,
   },
   statsGrid: {
     flexDirection: 'row',

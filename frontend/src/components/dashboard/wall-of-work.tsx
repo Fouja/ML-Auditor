@@ -19,8 +19,20 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import { cn } from '@/lib/utils';
-import { Plus, MoreHorizontal, Calendar, Tag, Trash2, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Plus, MoreHorizontal, Calendar, Tag, Trash2, ArrowRight, AlertTriangle, GripVertical } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -61,8 +73,13 @@ export function WallOfWork() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [draggedTask, setDraggedTask] = useState<string | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   useEffect(() => {
     fetchTasks();
@@ -71,7 +88,7 @@ export function WallOfWork() {
   const fetchTasks = useCallback(async () => {
     try {
       const response = await api.get('/workspace/tasks');
-      setTasks(response.data);
+      setTasks(Array.isArray(response.data) ? response.data : response.data?.results ?? []);
     } catch (error) {
       console.error('Failed to fetch tasks:', error);
     } finally {
@@ -128,19 +145,46 @@ export function WallOfWork() {
     }
   };
 
-  const handleDragStart = (taskId: string) => setDraggedTask(taskId);
-
-  const handleDragOver = (e: React.DragEvent, columnId: string) => {
-    e.preventDefault();
-    setDragOverColumn(columnId);
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    const task = tasks.find(t => t.id === id);
+    if (task) setActiveTask(task);
   };
 
-  const handleDragLeave = () => setDragOverColumn(null);
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const task = tasks.find(t => t.id === activeId);
+    if (!task) return;
 
-  const handleDrop = (columnId: string) => {
-    if (draggedTask) handleMoveTask(draggedTask, columnId);
-    setDraggedTask(null);
-    setDragOverColumn(null);
+    const overId = String(over.id);
+    const overColumn = COLUMNS.find(c => c.id === overId);
+    const targetStatus = overColumn?.id ?? (overId === task.status ? task.status : undefined);
+
+    if (targetStatus && targetStatus !== task.status) {
+      setTasks(prev => prev.map(t =>
+        t.id === activeId ? { ...t, status: targetStatus! } : t
+      ));
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTask(null);
+    if (!over) return;
+
+    const activeId = String(active.id);
+    const task = tasks.find(t => t.id === activeId);
+    if (!task) return;
+
+    const overId = String(over.id);
+    const overColumn = COLUMNS.find(c => c.id === overId);
+    const targetStatus = overColumn?.id ?? task.status;
+
+    if (targetStatus !== task.status) {
+      handleMoveTask(activeId, targetStatus);
+    }
   };
 
   const getTasksByStatus = (status: string) =>
@@ -176,114 +220,178 @@ export function WallOfWork() {
       </div>
 
       {/* Kanban Board */}
-      <div className="flex gap-3 p-3 overflow-x-auto flex-1">
-        {COLUMNS.map(column => (
-          <div
-            key={column.id}
-            className={cn(
-              'flex-1 min-w-[220px] rounded-xl transition-colors',
-              dragOverColumn === column.id && 'bg-accent/60 ring-1 ring-accent'
-            )}
-            onDragOver={(e) => handleDragOver(e, column.id)}
-            onDragLeave={handleDragLeave}
-            onDrop={() => handleDrop(column.id)}
-          >
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <div className={cn('w-2 h-2 rounded-full', column.color)} />
-              <span className="text-sm font-medium">{column.title}</span>
-              <span className="text-xs text-muted-foreground bg-muted px-1.5 rounded-full">
-                {getTasksByStatus(column.id).length}
-              </span>
-            </div>
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex gap-3 p-3 overflow-x-auto flex-1">
+          {COLUMNS.map(column => (
+            <KanbanColumn
+              key={column.id}
+              column={column}
+              tasks={getTasksByStatus(column.id)}
+              onMove={handleMoveTask}
+              onDelete={handleDeleteTask}
+              onEditPriority={handleUpdatePriority}
+              adding={addingToColumn === column.id}
+              newTaskTitle={newTaskTitle}
+              onNewTaskTitleChange={setNewTaskTitle}
+              onStartAdd={() => setAddingToColumn(column.id)}
+              onCancelAdd={() => setAddingToColumn(null)}
+              onAdd={() => handleAddTask(column.id)}
+            />
+          ))}
+        </div>
+        <DragOverlay>
+          {activeTask ? (
+            <Card className="shadow-xl border-primary/40 opacity-80 w-[220px]">
+              <CardContent className="p-3">
+                <p className="text-sm font-medium">{activeTask.title}</p>
+              </CardContent>
+            </Card>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
+  );
+}
 
-            <div className="space-y-2 min-h-[100px]">
-              {getTasksByStatus(column.id).map(task => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onDragStart={handleDragStart}
-                  onDragEnd={() => setDraggedTask(null)}
-                  onMove={handleMoveTask}
-                  onDelete={handleDeleteTask}
-                  onEditPriority={handleUpdatePriority}
-                  isDragging={draggedTask === task.id}
-                />
-              ))}
+function KanbanColumn({
+  column,
+  tasks,
+  onMove,
+  onDelete,
+  onEditPriority,
+  adding,
+  newTaskTitle,
+  onNewTaskTitleChange,
+  onStartAdd,
+  onCancelAdd,
+  onAdd,
+}: {
+  column: { id: string; title: string; color: string; icon: string };
+  tasks: Task[];
+  onMove: (id: string, status: string) => void;
+  onDelete: (id: string) => void;
+  onEditPriority: (id: string, priority: string) => void;
+  adding: boolean;
+  newTaskTitle: string;
+  onNewTaskTitleChange: (v: string) => void;
+  onStartAdd: () => void;
+  onCancelAdd: () => void;
+  onAdd: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
-              {addingToColumn === column.id ? (
-                <div className="space-y-2 animate-fade-in">
-                  <Input
-                    value={newTaskTitle}
-                    onChange={(e) => setNewTaskTitle(e.target.value)}
-                    placeholder="Task title..."
-                    className="text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddTask(column.id);
-                      if (e.key === 'Escape') setAddingToColumn(null);
-                    }}
-                    autoFocus
-                  />
-                  <div className="flex gap-1">
-                    <Button size="sm" onClick={() => handleAddTask(column.id)}>
-                      Add
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setAddingToColumn(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start text-muted-foreground hover:text-foreground"
-                  onClick={() => setAddingToColumn(column.id)}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add task
-                </Button>
-              )}
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'flex-1 min-w-[220px] rounded-xl transition-colors',
+        isOver && 'bg-accent/60 ring-1 ring-accent'
+      )}
+    >
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <div className={cn('w-2 h-2 rounded-full', column.color)} />
+        <span className="text-sm font-medium">{column.title}</span>
+        <span className="text-xs text-muted-foreground bg-muted px-1.5 rounded-full">
+          {tasks.length}
+        </span>
+      </div>
+
+      <div className="space-y-2 min-h-[100px]">
+        {tasks.map(task => (
+          <SortableTaskCard
+            key={task.id}
+            task={task}
+            onMove={onMove}
+            onDelete={onDelete}
+            onEditPriority={onEditPriority}
+          />
+        ))}
+
+        {adding ? (
+          <div className="space-y-2 animate-fade-in">
+            <Input
+              value={newTaskTitle}
+              onChange={(e) => onNewTaskTitleChange(e.target.value)}
+              placeholder="Task title..."
+              className="text-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onAdd();
+                if (e.key === 'Escape') onCancelAdd();
+              }}
+              autoFocus
+            />
+            <div className="flex gap-1">
+              <Button size="sm" onClick={onAdd}>
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onCancelAdd}>
+                Cancel
+              </Button>
             </div>
           </div>
-        ))}
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground hover:text-foreground"
+            onClick={onStartAdd}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add task
+          </Button>
+        )}
       </div>
     </div>
   );
 }
 
-function TaskCard({
+function SortableTaskCard({
   task,
-  onDragStart,
-  onDragEnd,
   onMove,
   onDelete,
   onEditPriority,
-  isDragging,
 }: {
   task: Task;
-  onDragStart: (id: string) => void;
-  onDragEnd: () => void;
   onMove: (id: string, status: string) => void;
   onDelete: (id: string) => void;
   onEditPriority: (id: string, priority: string) => void;
-  isDragging: boolean;
 }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: task.id,
+  });
+
+  const style = transform
+    ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+      }
+    : undefined;
+
   const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
 
   return (
     <Card
+      ref={setNodeRef}
+      style={style}
       className={cn(
-        'cursor-grab active:cursor-grabbing hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/30',
-        'transition-all duration-200 animate-fade-in-up',
-        isDragging && 'opacity-50 scale-95 shadow-xl rotate-2',
-        isOverdue && 'border-destructive/50'
+        'transition-shadow',
+        isDragging && 'opacity-40 shadow-xl'
       )}
-      draggable
-      onDragStart={() => onDragStart(task.id)}
-      onDragEnd={onDragEnd}
     >
       <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing touch-none p-1 -m-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors outline-none focus-visible:ring-2 ring-ring"
+            aria-label="Drag to move task"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{task.title}</p>
             {task.description && (

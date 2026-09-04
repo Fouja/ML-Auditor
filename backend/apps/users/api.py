@@ -87,25 +87,6 @@ def update_current_user(request, payload: UserUpdate):
     return user
 
 
-@router.get("/", response=List[UserResponse])
-def list_users(request):
-    """List all users (admin only)."""
-    if not request.auth.is_staff:
-        raise HttpError(403, "Not authorized")
-    return User.objects.all()
-
-
-@router.get("/{user_id}", response=UserResponse)
-def get_user(request, user_id: str):
-    """Get user by ID (admin only)."""
-    if not request.auth.is_staff:
-        raise HttpError(403, "Not authorized")
-    try:
-        return User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        raise HttpError(404, "User not found")
-
-
 @router.post("/push-token")
 def register_push_token(request, payload: PushTokenSchema):
     """Register or update a push notification token for the current user."""
@@ -131,3 +112,22 @@ def unregister_push_token(request, token: str):
 
     PushToken.objects.filter(user=request.auth, token=token).update(is_active=False)
     return {"success": True}
+
+
+@router.get("/", response=List[UserResponse])
+def list_users(request):
+    """List all users (admin only)."""
+    if not request.auth.is_staff:
+        raise HttpError(403, "Not authorized")
+    return User.objects.all()
+
+
+@router.get("/{user_id}", response=UserResponse)
+def get_user(request, user_id: str):
+    """Get user by ID (admin only)."""
+    if not request.auth.is_staff:
+        raise HttpError(403, "Not authorized")
+    try:
+        return User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        raise HttpError(404, "User not found")
