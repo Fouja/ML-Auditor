@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-import { getBackendUrl } from './desktop';
+import { getBackendUrl, isDesktopMode } from './desktop';
 
 const FALLBACK_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -30,8 +30,8 @@ async function resolveBaseUrl(): Promise<string> {
 export interface LogEntry {
   "@timestamp": string;
   level: "info" | "warn" | "error" | "debug";
-  service: "frontend";
-  stack: "nextjs";
+  service: "web" | "desktop" | "mobile";
+  stack: "nextjs" | "tauri" | "react-native";
   message: string;
   method?: string;
   path?: string;
@@ -50,10 +50,27 @@ class FrontendLogger {
   private flushInterval: ReturnType<typeof setInterval> | null = null;
   private readonly BUFFER_SIZE = 20;
   private readonly FLUSH_INTERVAL_MS = 5000;
+  private service: LogEntry["service"] = "web";
+  private stack: LogEntry["stack"] = "nextjs";
+  private serviceResolved = false;
 
   constructor() {
     if (typeof window !== "undefined") {
+      this.resolveService();
       this.flushInterval = setInterval(() => this.flush(), this.FLUSH_INTERVAL_MS);
+    }
+  }
+
+  private async resolveService() {
+    try {
+      if (await isDesktopMode()) {
+        this.service = "desktop";
+        this.stack = "tauri";
+      }
+    } catch {
+      // Stay with the web defaults.
+    } finally {
+      this.serviceResolved = true;
     }
   }
 
@@ -61,8 +78,8 @@ class FrontendLogger {
     return {
       "@timestamp": new Date().toISOString(),
       level,
-      service: "frontend",
-      stack: "nextjs",
+      service: this.service,
+      stack: this.stack,
       message,
       ...extra,
     };

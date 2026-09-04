@@ -6,7 +6,9 @@ filebeat.inputs:
     - /var/log/ml-auditor/**/*.log
   parsers:
     - ndjson:
-        target: ""
+        target: "parsed"
+        message_key: "message"
+        add_error_key: true
 
 output.logstash:
   hosts: ["logstash:5044"]

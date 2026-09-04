@@ -30,7 +30,7 @@ instructions.
 
 ```bash
 cd ~/Desktop/ML-auditor
-sudo dpkg -i frontend/src-tauri/target/release/bundle/deb/ML-Auditor_0.1.0_amd64.deb
+sudo dpkg -i frontend/src-tauri/target/release/bundle/deb/ML-Auditor_0.6.9_amd64.deb
 ```
 
 Launch from the application menu or run:
@@ -51,7 +51,7 @@ TAURI_SIGNING_PRIVATE_KEY_PATH=src-tauri/ml-auditor-updater.key \
 The installable package is produced at:
 
 ```
-frontend/src-tauri/target/release/bundle/deb/ML-Auditor_0.1.0_amd64.deb
+frontend/src-tauri/target/release/bundle/deb/ML-Auditor_0.6.9_amd64.deb
 ```
 
 ---
@@ -194,7 +194,7 @@ Frontend is now at http://localhost:3000
 
 ## Logging & Monitoring (ELK Stack)
 
-All services (Backend, Frontend) write structured JSON logs.
+All services (Backend, Web, Desktop, Mobile, Integrations, LLM) write structured JSON logs.
 Logs are stored in `logs/` and can be forwarded to Elasticsearch for
 visualization in Kibana.
 
@@ -203,7 +203,11 @@ visualization in Kibana.
 | Service | Log file | Written by |
 |---------|----------|------------|
 | Backend (Django) | `logs/backend/django.log` | Django JSON formatter + middleware |
-| Frontend (Next.js) | `logs/frontend/frontend.log` | Frontend logger → `POST /api/logs/` |
+| Web Frontend (Next.js) | `logs/clients/web/web.log` | Frontend logger → `POST /api/logs/` |
+| Desktop App (Tauri) | Logstash TCP (`service: desktop`) | Desktop frontend + sidecar |
+| Mobile App (React Native) | `logs/clients/mobile/mobile.log` | Mobile logger → `POST /api/logs/` |
+| Integrations | `logs/integration/integration.log` | Integration signal receivers |
+| LLM Health / Calls | `logs/llm/llm.log` | LLM health task, agent graph metrics |
 
 ### Log Entry Format
 
@@ -287,15 +291,20 @@ Wait 60-90 seconds for Elasticsearch and Kibana to fully initialize.
 # Select: docker/kibana/saved-objects.ndjson
 # Also import: docker/kibana/ml-auditor-metrics-dashboards.ndjson
 # And import: docker/kibana/ai-agent-telemetry.ndjson
+# And import: docker/kibana/project-logs-index-patterns.ndjson
 ```
 
-This imports 3 index patterns and 6 saved searches.
+This imports index patterns for every service and a logs-overview dashboard.
 
 #### Step 2 — Explore logs
 
 Go to **Analytics → Discover** and select one of the index patterns:
 - `ml-auditor-backend-*` — Django backend logs
-- `ml-auditor-frontend-*` — Next.js frontend logs
+- `ml-auditor-web-*` — Next.js web frontend logs
+- `ml-auditor-desktop-*` — Tauri desktop app logs
+- `ml-auditor-mobile-*` — React Native mobile logs
+- `ml-auditor-integration-*` — Integration sync / API key test logs
+- `ml-auditor-llm-*` — LLM health and chat-call logs
 - `ml-auditor-tcp-ingest-*` — External logs via TCP
 
 #### Quick Kibana queries (KQL)
@@ -303,10 +312,16 @@ Go to **Analytics → Discover** and select one of the index patterns:
 ```
 service: backend
 level: ERROR
-service: frontend AND level: warn
+service: web AND level: warn
+service: desktop
+service: mobile
+service: integration AND level: error
+service: llm
 status_code >= 400
 tags: auth
-event_type: http_request
+event_type: sync
+event_type: health_check
+metric_type: llm
 ```
 
 ### Live TCP Ingestion (for demos / teaching)
@@ -346,10 +361,17 @@ sock.close()
 ```
 POST http://localhost:8000/api/logs/
 Content-Type: application/json
-Authorization: Bearer <token>
 
-{"logs": [{"message": "hello", "level": "info"}]}
+{"logs": [{"message": "hello", "level": "info", "service": "myapp"}]}
 ```
+
+### Mobile & Desktop logging
+
+* **Web frontend** — logs are automatically tagged `service: web` and shipped by `frontend/src/lib/api.ts`.
+* **Mobile app** — `mobile/src/utils/logger.ts` batches logs and ships them to `POST /api/logs/`. Set `EXPO_PUBLIC_API_URL` to your backend IP when testing on a physical device.
+* **Desktop app** — the Tauri frontend uses the same logger (tagged `service: desktop`). The bundled Django sidecar writes JSON lines and also streams them directly to Logstash TCP on `localhost:5000`, so desktop backend logs appear even when Filebeat cannot read the per-user app-data directory.
+
+> Rebuild the desktop `.deb` after these changes so the Rust sidecar picks up the new `CLIENT_LOG_DIR` / `LOGSTASH_TCP_HOST` environment variables.
 
 ### Stopping ELK
 

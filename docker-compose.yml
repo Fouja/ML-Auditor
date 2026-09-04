@@ -56,7 +56,7 @@ services:
       - DJANGO_CHANNELS_LAYERS=redis://redis:6379/3
       - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
       - LOG_DIR=/var/log/ml-auditor/backend
-      - FRONTEND_LOG_DIR=/var/log/ml-auditor/frontend
+      - CLIENT_LOG_DIR=/var/log/ml-auditor/clients
       - NIM_API_KEY=${NIM_API_KEY:-}
       - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
       - NIM_MODEL=${NIM_MODEL:-meta/llama-3.1-8b-instruct}
@@ -80,6 +80,9 @@ services:
       - NIM_API_KEY=${NIM_API_KEY:-}
       - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
       - NIM_MODEL=${NIM_MODEL:-meta/llama-3.1-8b-instruct}
+      - CLIENT_LOG_DIR=/var/log/ml-auditor/clients
+      - LOGSTASH_TCP_HOST=logstash
+      - LOGSTASH_TCP_PORT=5000
     ports:
       - "8000:8000"
     group_add:
@@ -88,8 +91,7 @@ services:
       - ${DOCKER_GROUP_ID:-116}
     volumes:
       - ./backend:/app
-      - ./logs/backend:/var/log/ml-auditor/backend
-      - ./logs/frontend:/var/log/ml-auditor/frontend
+      - ./logs:/var/log/ml-auditor
       - static_files:/app/staticfiles
       - media_files:/app/media
       # Allow the "Run JobCamelonapp container" button to talk to the host
@@ -120,7 +122,7 @@ services:
       - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
       - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
       - LOG_DIR=/var/log/ml-auditor/backend
-      - FRONTEND_LOG_DIR=/var/log/ml-auditor/frontend
+      - CLIENT_LOG_DIR=/var/log/ml-auditor/clients
       - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
       - PLAID_SECRET=${PLAID_SECRET:-}
       - PLAID_ENV=${PLAID_ENV:-sandbox}
@@ -132,8 +134,7 @@ services:
       - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-false}
     volumes:
       - ./backend:/app
-      - ./logs/backend:/var/log/ml-auditor/backend
-      - ./logs/frontend:/var/log/ml-auditor/frontend
+      - ./logs:/var/log/ml-auditor
     depends_on:
       db:
         condition: service_healthy
@@ -162,7 +163,7 @@ services:
       - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
       - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2
       - LOG_DIR=/var/log/ml-auditor/backend
-      - FRONTEND_LOG_DIR=/var/log/ml-auditor/frontend
+      - CLIENT_LOG_DIR=/var/log/ml-auditor/clients
       - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
       - PLAID_SECRET=${PLAID_SECRET:-}
       - PLAID_ENV=${PLAID_ENV:-sandbox}
@@ -174,8 +175,7 @@ services:
       - ELASTIC_APM_ENABLED=${ELASTIC_APM_ENABLED:-false}
     volumes:
       - ./backend:/app
-      - ./logs/backend:/var/log/ml-auditor/backend
-      - ./logs/frontend:/var/log/ml-auditor/frontend
+      - ./logs:/var/log/ml-auditor
     depends_on:
       db:
         condition: service_healthy
@@ -203,7 +203,6 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/app
-      - ./logs/frontend:/var/log/ml-auditor/frontend
       - /app/node_modules
       - /app/.next
     depends_on:
@@ -259,7 +258,7 @@ services:
       - "8100:8100"
     volumes:
       - ./backend:/app
-      - ./logs/backend:/var/log/ml-auditor/backend
+      - ./logs:/var/log/ml-auditor
     depends_on:
       db:
         condition: service_healthy
@@ -478,7 +477,7 @@ services:
     restart: "no"
     user: root
     command: >
-      sh -c "metricbeat setup -e -E output.elasticsearch.hosts=[\"http://elasticsearch:9200\"]"
+      sh -c "metricbeat setup -e -strict.perms=false -E output.elasticsearch.hosts=[\"http://elasticsearch:9200\"]"
     volumes:
       - ./docker/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro

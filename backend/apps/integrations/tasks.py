@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from celery import shared_task
 
 logger = logging.getLogger(__name__)
+llm_logger = logging.getLogger("apps.logs.llm")
 
 
 @shared_task(name="apps.integrations.tasks.llm_health_check")
@@ -63,17 +64,29 @@ def llm_health_check():
         error = str(e)[:300]
         logger.warning(f"LLM health check failed: {e}")
 
+    llm_payload = {
+        "metric": "llm_health",
+        "metric_type": "llm",
+        "event_type": "health_check",
+        "status": status,
+        "latency_ms": latency_ms,
+        "model": model,
+        "error": error,
+    }
     metrics_logger.info(
         "llm_health",
         extra={
-            "metrics": {
-                "metric": "llm_health",
-                "metric_type": "llm",
-                "status": status,
-                "latency_ms": latency_ms,
-                "model": model,
-                "error": error,
-            }
+            "service": "llm",
+            "stack": "celery",
+            "metrics": llm_payload,
+        },
+    )
+    llm_logger.info(
+        "llm_health",
+        extra={
+            "service": "llm",
+            "stack": "celery",
+            "metrics": llm_payload,
         },
     )
     return {"status": status, "latency_ms": latency_ms}

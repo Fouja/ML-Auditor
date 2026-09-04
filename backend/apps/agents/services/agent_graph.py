@@ -35,7 +35,18 @@ METRICS_LOGGER = logging.getLogger("apps.metrics")
 
 def _log_metric(event: str, data: Dict[str, Any]) -> None:
     """Emit a structured metric that the JSON formatter ships to Elasticsearch."""
-    METRICS_LOGGER.info(event, extra={"metrics": data})
+    service = data.get("metric_type", "metrics")
+    stack = "django"
+    if service == "llm":
+        stack = "langchain"
+    METRICS_LOGGER.info(
+        event,
+        extra={
+            "service": service,
+            "stack": stack,
+            "metrics": data,
+        },
+    )
 
 
 def _user_id(state: Dict[str, Any]) -> str:

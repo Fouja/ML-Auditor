@@ -24,13 +24,15 @@ import {
   getBackendUrl,
   resetLocalDatabase,
   checkForAppUpdate,
+  getAppVersion,
 } from '@/lib/desktop';
-import { Loader2, Trash2, RefreshCw, Monitor, ArrowLeft } from 'lucide-react';
+import { Loader2, Trash2, RefreshCw, Monitor, ArrowLeft, Info } from 'lucide-react';
 
 export default function DesktopPage() {
   const router = useRouter();
   const [desktop, setDesktop] = useState<boolean | null>(null);
   const [backendUrl, setBackendUrl] = useState<string>('');
+  const [appVersion, setAppVersion] = useState<string>('');
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetResult, setResetResult] = useState<string | null>(null);
@@ -42,8 +44,9 @@ export default function DesktopPage() {
       const isDesktop = await isDesktopMode();
       setDesktop(isDesktop);
       if (isDesktop) {
-        const url = await getBackendUrl();
+        const [url, version] = await Promise.all([getBackendUrl(), getAppVersion()]);
         setBackendUrl(url);
+        setAppVersion(version);
       }
     })();
   }, []);
@@ -116,6 +119,23 @@ export default function DesktopPage() {
       )}
 
       <div className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>App Version</CardTitle>
+            <CardDescription>
+              Current installed version of the ML-Auditor desktop app.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <Info className="h-4 w-4 text-muted-foreground" />
+              <span className="text-lg font-semibold">
+                {appVersion ? `v${appVersion}` : '—'}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Local Backend</CardTitle>

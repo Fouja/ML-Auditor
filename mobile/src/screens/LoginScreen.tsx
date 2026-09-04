@@ -36,7 +36,21 @@ export function LoginScreen() {
         : await register({ email, username, password });
       await setAuth(data.user, data.tokens);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Authentication failed');
+      let message = 'Authentication failed';
+      if (err?.code === 'ECONNABORTED' || err?.code === 'ERR_NETWORK' || !err?.response) {
+        message = `Cannot reach backend at ${process.env.EXPO_PUBLIC_API_URL}. Make sure the server is running and your phone is on the same Wi-Fi.`;
+      } else if (err?.response?.data?.detail) {
+        message = err.response.data.detail;
+      } else if (err?.response?.status === 400) {
+        message = 'Invalid request. Please check your credentials.';
+      } else if (err?.response?.status === 401) {
+        message = 'Incorrect email or password.';
+      } else if (err?.response?.status === 403) {
+        message = 'Access denied. Check server ALLOWED_HOSTS/CORS settings.';
+      } else if (typeof err?.response?.data === 'string') {
+        message = err.response.data;
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }

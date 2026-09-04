@@ -139,9 +139,26 @@ def llm_health(request):
 
     from .services.agent_command import AgentCommandService
 
+    llm_logger = logging.getLogger("apps.logs.llm")
+
     service = AgentCommandService(request.auth)
     api_key, base_url, model, _provider = asyncio.run(service._get_nim_config())
     if not api_key:
+        llm_logger.warning(
+            "llm_health_not_configured",
+            extra={
+                "service": "llm",
+                "stack": "django",
+                "metrics": {
+                    "metric": "llm_health",
+                    "metric_type": "llm",
+                    "event_type": "health_check",
+                    "status": "not_configured",
+                    "latency_ms": 0,
+                    "model": model,
+                },
+            },
+        )
         return {"status": "not_configured", "model": model, "latency_ms": 0}
 
     status = "error"
@@ -170,6 +187,22 @@ def llm_health(request):
     except Exception as e:
         error = str(e)[:300]
 
+    llm_logger.info(
+        "llm_health",
+        extra={
+            "service": "llm",
+            "stack": "django",
+            "metrics": {
+                "metric": "llm_health",
+                "metric_type": "llm",
+                "event_type": "health_check",
+                "status": status,
+                "latency_ms": latency_ms,
+                "model": model,
+                "error": error,
+            },
+        },
+    )
     return {"status": status, "model": model, "latency_ms": latency_ms, "error": error}
 
 

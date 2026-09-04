@@ -1,0 +1,7 @@
+{"attributes":{"title":"ml-auditor-web-*","timeFieldName":"@timestamp"},"type":"index-pattern","id":"ml-auditor-web"}
+{"attributes":{"title":"ml-auditor-desktop-*","timeFieldName":"@timestamp"},"type":"index-pattern","id":"ml-auditor-desktop"}
+{"attributes":{"title":"ml-auditor-mobile-*","timeFieldName":"@timestamp"},"type":"index-pattern","id":"ml-auditor-mobile"}
+{"attributes":{"title":"ml-auditor-backend-*","timeFieldName":"@timestamp"},"type":"index-pattern","id":"ml-auditor-backend"}
+{"attributes":{"title":"ml-auditor-integration-*","timeFieldName":"@timestamp"},"type":"index-pattern","id":"ml-auditor-integration"}
+{"attributes":{"title":"ml-auditor-llm-*","timeFieldName":"@timestamp"},"type":"index-pattern","id":"ml-auditor-llm"}
+{"attributes":{"title":"ml-auditor-all-logs","timeFieldName":"@timestamp"},"type":"index-pattern","id":"ml-auditor-all-logs"}

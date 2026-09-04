@@ -12,7 +12,13 @@ import { invoke } from '@tauri-apps/api/core';
 let cachedBackendUrl: string | null = null;
 
 function isTauriAvailable(): boolean {
-  return typeof window !== 'undefined' && !!(window as unknown as Record<string, unknown>).__TAURI__;
+  // In Tauri v2 the IPC runtime is exposed on `window.__TAURI_INTERNALS__`
+  // (the older `window.__TAURI__` global is only injected when
+  // `app.withGlobalTauri` is enabled in tauri.conf.json).
+  return (
+    typeof window !== 'undefined' &&
+    !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
+  );
 }
 
 export async function isDesktopMode(): Promise<boolean> {
@@ -51,6 +57,17 @@ export async function checkForAppUpdate(): Promise<string> {
     throw new Error('App updates are only available in the desktop app.');
   }
   return invoke<string>('check_for_app_update');
+}
+
+export async function getAppVersion(): Promise<string> {
+  if (!isTauriAvailable()) {
+    return process.env.NEXT_PUBLIC_APP_VERSION || '';
+  }
+  try {
+    return await invoke<string>('get_app_version');
+  } catch {
+    return process.env.NEXT_PUBLIC_APP_VERSION || '';
+  }
 }
 
 // ─── Notifications ──────────────────────────────────────────────────

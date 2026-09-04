@@ -11,6 +11,8 @@ from pathlib import Path
 
 import environ
 
+from config.logging_handlers import JSONFormatter
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -323,51 +325,18 @@ if SENTRY_DSN:
 # ===========================================
 
 
-class JSONFormatter(logging.Formatter):
-    """JSON log formatter for Elasticsearch ingestion."""
-
-    def format(self, record):
-        log_entry = {
-            "@timestamp": self.formatTime(record, self.datefmt),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "service": "backend",
-            "stack": "django",
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-        }
-
-        if hasattr(record, "request_method"):
-            log_entry["request_method"] = record.request_method
-        if hasattr(record, "request_path"):
-            log_entry["request_path"] = record.request_path
-        if hasattr(record, "status_code"):
-            log_entry["status_code"] = record.status_code
-        if hasattr(record, "user_id"):
-            log_entry["user_id"] = record.user_id
-        if hasattr(record, "ip_address"):
-            log_entry["ip_address"] = record.ip_address
-        if hasattr(record, "response_time"):
-            log_entry["response_time"] = record.response_time
-
-        if hasattr(record, "metrics") and isinstance(record.metrics, dict):
-            for k, v in record.metrics.items():
-                log_entry[k] = v
-
-        if record.exc_info and record.exc_info[0]:
-            log_entry["exception"] = {
-                "type": record.exc_info[0].__name__,
-                "message": str(record.exc_info[1]),
-                "traceback": self.formatException(record.exc_info),
-            }
-
-        return json.dumps(log_entry, default=str)
-
-
 LOG_DIR = Path(os.environ.get("LOG_DIR", BASE_DIR.parent / "logs" / "backend"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Per-service log files used by dedicated loggers (integration, LLM, etc.).
+INTEGRATION_LOG_DIR = LOG_DIR.parent / "integration"
+INTEGRATION_LOG_DIR.mkdir(parents=True, exist_ok=True)
+LLM_LOG_DIR = LOG_DIR.parent / "llm"
+LLM_LOG_DIR.mkdir(parents=True, exist_ok=True)
+CLIENT_LOG_DIR = Path(
+    os.environ.get("CLIENT_LOG_DIR", BASE_DIR.parent / "logs" / "clients")
+)
+CLIENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 LOGGING = {
     "version": 1,
@@ -395,6 +364,16 @@ LOGGING = {
             "filename": LOG_DIR / "django.log",
             "formatter": "json",
         },
+        "integration_file": {
+            "class": "logging.FileHandler",
+            "filename": INTEGRATION_LOG_DIR / "integration.log",
+            "formatter": "json",
+        },
+        "llm_file": {
+            "class": "logging.FileHandler",
+            "filename": LLM_LOG_DIR / "llm.log",
+            "formatter": "json",
+        },
     },
     "root": {
         "handlers": ["console", "file"],
@@ -409,6 +388,16 @@ LOGGING = {
         "apps": {
             "handlers": ["json_console", "file"],
             "level": "DEBUG",
+            "propagate": False,
+        },
+        "apps.logs.integration": {
+            "handlers": ["integration_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.logs.llm": {
+            "handlers": ["llm_file"],
+            "level": "INFO",
             "propagate": False,
         },
     },

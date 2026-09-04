@@ -105,7 +105,8 @@ async fn start_backend(
     let sidecar_path = resolve_sidecar_path(app)?;
 
     let db_path = data_dir.join("ml-auditor.sqlite3");
-    let log_path = data_dir.join("backend.log");
+    let log_path = data_dir.join("logs").join("backend.log");
+    let clients_log_dir = data_dir.join("logs").join("clients");
 
     let mut cmd = Command::new(sidecar_path);
     cmd.arg("runserver")
@@ -115,6 +116,9 @@ async fn start_backend(
         .env("ML_AUDITOR_DATA_DIR", data_dir)
         .env("DESKTOP_DB_PATH", &db_path)
         .env("DESKTOP_LOG_PATH", &log_path)
+        .env("CLIENT_LOG_DIR", &clients_log_dir)
+        .env("LOGSTASH_TCP_HOST", "localhost")
+        .env("LOGSTASH_TCP_PORT", "5000")
         .env("DESKTOP_BACKEND_PORT", port.to_string())
         .env("PYTHONUNBUFFERED", "1");
 
@@ -154,6 +158,12 @@ async fn wait_for_backend(url: &str, timeout_secs: u64) -> anyhow::Result<()> {
 #[tauri::command]
 fn get_backend_url(state: State<'_, DesktopState>) -> String {
     state.backend_url()
+}
+
+/// Returns the installed desktop app version (from Cargo.toml).
+#[tauri::command]
+fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 /// Lets the frontend detect desktop mode so it can hide web-only integrations
@@ -378,6 +388,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
+            get_app_version,
             is_desktop_mode,
             reset_local_database,
             check_for_app_update,
