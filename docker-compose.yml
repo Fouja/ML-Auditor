@@ -50,6 +50,7 @@ services:
       - DJANGO_DEBUG=True
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
       - DJANGO_DATABASE_URL=postgres://mlauditor:mlauditor@db:5432/mlauditor_db
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
       - DJANGO_CACHE_URL=redis://redis:6379/0
       - DJANGO_CELERY_BROKER_URL=redis://redis:6379/1
       - DJANGO_CELERY_RESULT_BACKEND=redis://redis:6379/2

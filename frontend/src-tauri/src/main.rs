@@ -15,6 +15,7 @@
 // 5. Cleanly terminate the backend when the app closes.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -34,8 +35,9 @@ use tokio::sync::Mutex;
 /// Backend process handle + runtime configuration.
 /// Wrapped in Arc<Mutex<>> so every Tauri command can read/write it safely.
 struct DesktopState {
-    /// Port the Django backend is listening on.
-    backend_port: u16,
+    /// Port the Django backend is listening on (may change after a reset if
+    /// an old backend process is still holding the original port).
+    backend_port: Arc<AtomicU16>,
     /// Directory where the SQLite database and logs live.
     data_dir: PathBuf,
     /// Handle to the running sidecar process. `None` only during shutdown.
@@ -44,7 +46,10 @@ struct DesktopState {
 
 impl DesktopState {
     fn backend_url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.backend_port)
+        format!(
+            "http://127.0.0.1:{}",
+            self.backend_port.load(Ordering::Relaxed)
+        )
     }
 }
 
@@ -150,6 +155,58 @@ async fn wait_for_backend(url: &str, timeout_secs: u64) -> anyhow::Result<()> {
     anyhow::bail!("backend did not become healthy within {} seconds", timeout_secs)
 }
 
+/// Best-effort kill of any lingering backend process still bound to `port`.
+/// A backend can survive as an orphan when a desktop instance exits without
+/// terminating its sidecar; without this cleanup the post-reset restart fails
+/// to bind its port and the app is left without a backend.
+fn kill_backend_on_port(port: u16) {
+    let pattern = format!("runserver --noreload 127.0.0.1:{}", port);
+    let _ = std::process::Command::new("pkill")
+        .arg("-f")
+        .arg(pattern)
+        .status();
+}
+
+/// Returns true if `port` is currently free to bind on loopback.
+async fn port_is_free(port: u16) -> bool {
+    tokio::net::TcpListener::bind(("127.0.0.1", port)).await.is_ok()
+}
+
+/// Start the backend sidecar on a free port and wait until it is healthy.
+/// Prefers `preferred_port`, but falls back to the next free port if an orphan
+/// is still holding it. Returns the port the backend actually bound to.
+async fn restart_backend(
+    app: &tauri::AppHandle,
+    state: &DesktopState,
+    preferred_port: u16,
+) -> Result<u16, String> {
+    let mut port = preferred_port;
+    for _ in 0..3 {
+        if !port_is_free(port).await {
+            match find_free_port(port).await {
+                Ok(p) => port = p,
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+
+        let child = start_backend(app, &state.data_dir, port)
+            .await
+            .map_err(|e| e.to_string())?;
+        let url = format!("http://127.0.0.1:{}", port);
+        if wait_for_backend(&url, 30).await.is_ok() {
+            *state.backend.lock().await = Some(child);
+            return Ok(port);
+        }
+
+        let mut child = child;
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+        port += 1;
+    }
+
+    Err("backend failed to restart after the database reset".to_string())
+}
+
 // ---------------------------------------------------------------------------
 // 2. Tauri command API exposed to the frontend
 // ---------------------------------------------------------------------------
@@ -180,6 +237,8 @@ async fn reset_local_database(
     app: tauri::AppHandle,
     state: State<'_, DesktopState>,
 ) -> Result<String, String> {
+    let preferred_port = state.backend_port.load(Ordering::Relaxed);
+
     // Stop the running backend so the SQLite file is not locked.
     {
         let mut lock = state.backend.lock().await;
@@ -188,6 +247,11 @@ async fn reset_local_database(
             let _ = child.wait().await;
         }
     }
+
+    // Make sure no orphaned backend is still holding the port, otherwise the
+    // restart below fails to bind it.
+    kill_backend_on_port(preferred_port);
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // Run the backend binary once in "reset" mode.
     let reset_result = async {
@@ -210,13 +274,23 @@ async fn reset_local_database(
     }
     .await;
 
-    // Restart the backend so the UI can keep working.
-    let new_child = start_backend(&app, &state.data_dir, state.backend_port)
-        .await
-        .map_err(|e| e.to_string())?;
-    *state.backend.lock().await = Some(new_child);
-
-    reset_result
+    // Restart the backend so the UI can keep working. Keep the original port
+    // when possible; the frontend caches the resolved backend URL.
+    match restart_backend(&app, &state, preferred_port).await {
+        Ok(port) => {
+            if port != preferred_port {
+                state.backend_port.store(port, Ordering::Relaxed);
+            }
+            reset_result
+        }
+        Err(e) => Err(format!(
+            "Backend restart after reset failed: {e}{}",
+            match &reset_result {
+                Ok(msg) if !msg.trim().is_empty() => format!("\nReset output: {msg}"),
+                _ => String::new(),
+            }
+        )),
+    }
 }
 
 /// Check for updates from the configured GitHub release endpoint.
@@ -313,7 +387,7 @@ pub fn run() {
                 .expect("backend failed to start");
 
             let state = DesktopState {
-                backend_port: port,
+                backend_port: Arc::new(AtomicU16::new(port)),
                 data_dir,
                 backend: Arc::new(Mutex::new(Some(child))),
             };

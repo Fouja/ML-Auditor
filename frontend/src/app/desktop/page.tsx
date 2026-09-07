@@ -55,6 +55,13 @@ export default function DesktopPage() {
     setResetting(true);
     setResetResult(null);
     try {
+      const isDesktop = await isDesktopMode();
+      if (!isDesktop) {
+        throw new Error(
+          'Database reset is only available in the installed desktop app. ' +
+            'This page is currently running in the web version.'
+        );
+      }
       const result = await resetLocalDatabase();
       setResetResult(result);
     } catch (err) {
@@ -71,6 +78,13 @@ export default function DesktopPage() {
     setCheckingUpdate(true);
     setUpdateResult(null);
     try {
+      const isDesktop = await isDesktopMode();
+      if (!isDesktop) {
+        throw new Error(
+          'App updates are only available in the installed desktop app. ' +
+            'This page is currently running in the web version.'
+        );
+      }
       const result = await checkForAppUpdate();
       setUpdateResult(result);
     } catch (err) {
@@ -172,7 +186,6 @@ export default function DesktopPage() {
             <Button
               variant="destructive"
               onClick={() => setResetOpen(true)}
-              disabled={!desktop}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Delete Local Database
@@ -201,7 +214,7 @@ export default function DesktopPage() {
           <CardContent>
             <Button
               onClick={handleCheckUpdate}
-              disabled={!desktop || checkingUpdate}
+              disabled={checkingUpdate}
             >
               {checkingUpdate ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

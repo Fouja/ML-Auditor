@@ -7,9 +7,12 @@
  * hard-coded web API URL.
  */
 
-import { invoke } from '@tauri-apps/api/core';
-
 let cachedBackendUrl: string | null = null;
+
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+  return tauriInvoke<T>(cmd, args);
+}
 
 function isTauriAvailable(): boolean {
   // In Tauri v2 the IPC runtime is exposed on `window.__TAURI_INTERNALS__`
