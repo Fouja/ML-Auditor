@@ -1,0 +1,70 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>ADEX Genie AI — Voice Agent Cost Blueprint (No TTS)</title>
+<style>
+  body{margin:0;background:#0a0e2a;display:flex;justify-content:center;padding:24px;font-family:'Segoe UI',system-ui,sans-serif}
+  .slide{background:linear-gradient(135deg,#0a0e2a 0%,#141b45 60%,#1d2461 100%);color:#fff;border-radius:16px;padding:36px 40px;max-width:1100px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#4f7cff,#9b5cff);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px}
+  h1{font-size:28px;margin:14px 0 2px}
+  .sub{color:#9aa6d8;font-size:14px;margin-bottom:18px}
+  .cols{display:grid;grid-template-columns:1.15fr 1fr;gap:30px}
+  h2{font-size:14px;color:#8fb2ff;text-transform:uppercase;letter-spacing:1px;margin:16px 0 10px;border-left:3px solid #4f7cff;padding-left:8px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:#8fb2ff;padding:6px 8px;border-bottom:1px solid #2a356b}
+  td{padding:6px 8px;border-bottom:1px solid #1e2753}
+  .right{text-align:right;white-space:nowrap}
+  .strike{color:#ff8a8a;text-decoration:line-through;font-size:11px}
+  .stack{background:#171f4d;border:1px solid #2a356b;border-radius:12px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .stack .name{font-weight:700;font-size:13px}.stack .detail{color:#9aa6d8;font-size:11px;margin-top:2px}
+  .stack .cost{font-size:17px;font-weight:800;color:#6fe3a5}.stack .per{font-size:10px;color:#9aa6d8;text-align:right}
+  .highlight{border-color:#4f7cff;box-shadow:0 0 0 1px #4f7cff inset}
+  .tag{background:#4f7cff;font-size:10px;padding:2px 8px;border-radius:20px;margin-left:8px}
+  .offer{border-radius:14px;padding:14px 16px;border:1px solid #2a356b;background:#141b45;margin-bottom:10px}
+  .offer.pro{border-color:#9b5cff}
+  .offer .top{display:flex;justify-content:space-between;align-items:baseline}
+  .offer .tier{font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:700}
+  .starter .tier{color:#6fc1ff}.pro .tier{color:#c39bff}.premium .tier{color:#ffd166}
+  .offer .price{font-size:20px;font-weight:800}
+  .offer .min{color:#9aa6d8;font-size:11px;margin-top:2px}
+  .offer .margin{margin-top:8px;font-size:12px;background:#0d1330;border-radius:8px;padding:6px 10px;color:#9aa6d8}
+  .offer .margin b{color:#6fe3a5}
+  .note{margin-top:12px;font-size:11px;color:#7c88bb}
+</style><base target="_blank">
+</head><body><div class="slide">
+  <div class="brand"><div class="logo">A</div><div style="font-weight:700;letter-spacing:1px">ADEX GENIE AI</div></div>
+  <h1>Real-Time AI Voice Agents — Cost &amp; Pricing Blueprint</h1>
+  <div class="sub">LiveKit Agent Framework · 4-Layer Pipeline (TTS excluded): Infrastructure → SIP → STT → LLM</div>
+  <div class="cols"><div>
+    <h2>Component Cost Breakdown (per call minute)</h2>
+    <table>
+      <tr><th>Pipeline Layer</th><th>Provider</th><th class="right">Est. Cost / min</th></tr>
+      <tr><td>Real-time Transport</td><td>LiveKit Cloud (Agent + SIP)</td><td class="right">$0.014</td></tr>
+      <tr><td>Telephony / Carrier</td><td>Telnyx / Twilio</td><td class="right">$0.005 – $0.010</td></tr>
+      <tr><td>Speech-to-Text</td><td>Deepgram Nova-2</td><td class="right">$0.005</td></tr>
+      <tr><td>LLM (Brain)</td><td>GPT-4o-mini / Groq Llama 3</td><td class="right">$0.001 – $0.003</td></tr>
+      <tr><td style="color:#ff8a8a">Text-to-Speech <span style="font-size:10px">(EXCLUDED)</span></td><td style="color:#ff8a8a">Cartesia / Aura / ElevenLabs</td><td class="right"><span class="strike">$0.010 – $0.040</span> $0.000</td></tr>
+    </table>
+    <h2>Tech Stack Tiers — Total Cost / Minute (no TTS)</h2>
+    <div class="stack"><div><div class="name">1 · Budget / Ultra-Fast</div><div class="detail">LiveKit + Telnyx + Deepgram STT + GPT-4o-mini</div></div><div><div class="cost">$0.025</div><div class="per">$1.50 / hr</div></div></div>
+    <div class="stack highlight"><div><div class="name">2 · Standard Production<span class="tag">Best Balance</span></div><div class="detail">LiveKit + Twilio + Deepgram STT + GPT-4o-mini</div></div><div><div class="cost">$0.030</div><div class="per">$1.80 / hr</div></div></div>
+    <div class="stack"><div><div class="name">3 · Premium Voice</div><div class="detail">LiveKit + Twilio + Deepgram STT + GPT-4o</div></div><div><div class="cost">$0.049</div><div class="per">$2.94 / hr</div></div></div>
+    <div class="stack"><div><div class="name">4 · Native Speech-to-Speech</div><div class="detail">LiveKit + Twilio + OpenAI Realtime Audio</div></div><div><div class="cost">$0.274</div><div class="per">$16.44 / hr</div></div></div>
+  </div><div>
+    <h2>Customer Offers — Built on $0.03/min (no TTS)</h2>
+    <div class="offer starter">
+      <div class="top"><div class="tier">Starter</div><div class="price">$199<span style="font-size:12px;color:#9aa6d8">/mo</span></div></div>
+      <div class="min">500 min included → $0.40/min</div>
+      <div class="margin">Cost 500 × $0.03 = <b>$15</b> · Margin ($199−$15)/$199 = <b>92%</b></div>
+    </div>
+    <div class="offer pro">
+      <div class="top"><div class="tier">Professional ★</div><div class="price">$499<span style="font-size:12px;color:#9aa6d8">/mo</span></div></div>
+      <div class="min">1,500 min included → $0.33/min</div>
+      <div class="margin">Cost 1,500 × $0.03 = <b>$45</b> · Margin ($499−$45)/$499 = <b>91%</b></div>
+    </div>
+    <div class="offer premium">
+      <div class="top"><div class="tier">Enterprise</div><div class="price">$0.25<span style="font-size:12px;color:#9aa6d8">/min</span></div></div>
+      <div class="min">Usage-based · volume tiers</div>
+      <div class="margin">Cost $0.03/min · Margin ($0.25−$0.03)/$0.25 = <b>88%</b></div>
+    </div>
+    <div class="note">Margins assume no TTS API fees (client-supplied/synthesized audio path). Self-hosting LiveKit + vLLM can push margins above 95%.</div>
+  </div></div>
+</div></body></html>

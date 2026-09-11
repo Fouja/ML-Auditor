@@ -12,6 +12,7 @@ Usage:
 """
 
 import os
+import sys
 from pathlib import Path
 
 from PyInstaller.building.api import PYZ, EXE
@@ -26,6 +27,13 @@ ROOT = Path(SPECPATH).resolve()  # backend/
 PROJECT_ROOT = ROOT.parent
 VENV = PROJECT_ROOT / ".venv"
 
+# Venv site-packages location differs between Linux and Windows.
+if os.name == "nt":
+    SITE_PACKAGES = VENV / "Lib" / "site-packages"
+else:
+    maj, min_ = sys.version_info[:2]
+    SITE_PACKAGES = VENV / "lib" / f"python{maj}.{min_}" / "site-packages"
+
 block_cipher = None
 
 # ---------------------------------------------------------------------------
@@ -34,7 +42,9 @@ block_cipher = None
 
 def safe_collect_data(package: str):
     try:
-        return collect_data_files(package, include_py_files=True)
+        files = collect_data_files(package, include_py_files=True)
+        # Skip OneDrive/Explorer metafiles that can disappear between runs.
+        return [f for f in files if not f[0].lower().endswith(("desktop.ini", "thumbs.db"))]
     except Exception:
         return []
 
@@ -157,13 +167,13 @@ all_hiddenimports += [
 
 a = Analysis(
     [str(ROOT / "manage.py")],
-    pathex=[str(ROOT), str(VENV / "lib" / "python3.14" / "site-packages")],
+    pathex=[str(ROOT), str(SITE_PACKAGES)],
     binaries=[],
     datas=all_datas,
     hiddenimports=all_hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / "pyi_runtime_hook.py")],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -187,7 +197,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    # On Windows the sidecar is a GUI-subsystem exe so no console window pops
+    # up next to the desktop app (logs go to file + Logstash TCP, not stdout).
+    # pyi_runtime_hook.py substitutes devnull streams for the None sys.stdout
+    # that windowed mode produces, so Django's command output doesn't crash.
+    console=os.name != "nt",
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

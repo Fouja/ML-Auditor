@@ -246,6 +246,7 @@ services:
       - JC_API_TOKEN=${JC_API_TOKEN:-}
       - JC_PUBLIC_URL=${JC_PUBLIC_URL:-http://localhost:8787}
       - LOG_DIR=/var/log/ml-auditor/backend
+      - CLIENT_LOG_DIR=/var/log/ml-auditor/clients
       - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
       - PLAID_SECRET=${PLAID_SECRET:-}
       - PLAID_ENV=${PLAID_ENV:-sandbox}

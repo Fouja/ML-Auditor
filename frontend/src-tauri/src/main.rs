@@ -76,30 +76,54 @@ async fn find_free_port(base: u16) -> anyhow::Result<u16> {
 /// as a Tauri `externalBin`. We pass the desktop Django settings module and
 /// the data directory so the backend knows where to put its SQLite file.
 fn resolve_sidecar_path(app: &tauri::AppHandle) -> anyhow::Result<std::path::PathBuf> {
-    // Tauri external binaries are bundled next to the app executable on Linux.
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+    // Tauri external binaries are bundled inside the app's resource directory
+    // (Linux) or next to the app executable (Windows). Windows binaries carry a
+    // `.exe` extension and keep their target-triple suffix in the bundle.
+    let target_triple: &str = if cfg!(target_os = "windows") {
+        "x86_64-pc-windows-msvc"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
 
-    if let Some(dir) = exe_dir {
-        let candidates = [
-            dir.join("ml-auditor-backend"),
-            dir.join("binaries").join("ml-auditor-backend"),
-        ];
-        for candidate in &candidates {
-            if candidate.exists() {
-                return Ok(candidate.clone());
+    let mut names: Vec<String> = vec![
+        "ml-auditor-backend".to_string(),
+        format!("ml-auditor-backend-{target_triple}"),
+    ];
+    if cfg!(target_os = "windows") {
+        names.extend([
+            "ml-auditor-backend.exe".to_string(),
+            format!("ml-auditor-backend-{target_triple}.exe"),
+        ]);
+    }
+
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+    {
+        for name in &names {
+            for candidate in [dir.join(name), dir.join("binaries").join(name)] {
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
             }
         }
     }
 
-    // Fallback to the Tauri resource directory (development / other platforms).
-    app.path()
-        .resolve(
-            "binaries/ml-auditor-backend",
+    for name in &names {
+        if let Ok(path) = app.path().resolve(
+            &format!("binaries/{name}"),
             tauri::path::BaseDirectory::Resource,
-        )
-        .context("could not resolve backend sidecar path")
+        ) {
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "could not resolve backend sidecar path (tried: {})",
+        names.join(", ")
+    )
 }
 
 async fn start_backend(
@@ -161,10 +185,23 @@ async fn wait_for_backend(url: &str, timeout_secs: u64) -> anyhow::Result<()> {
 /// to bind its port and the app is left without a backend.
 fn kill_backend_on_port(port: u16) {
     let pattern = format!("runserver --noreload 127.0.0.1:{}", port);
-    let _ = std::process::Command::new("pkill")
-        .arg("-f")
-        .arg(pattern)
-        .status();
+    #[cfg(target_os = "windows")]
+    {
+        // Match the exact command line via WMI, then force-kill the process.
+        let script = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{pattern}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("pkill")
+            .arg("-f")
+            .arg(pattern)
+            .status();
+    }
 }
 
 /// Returns true if `port` is currently free to bind on loopback.
@@ -193,7 +230,7 @@ async fn restart_backend(
             .await
             .map_err(|e| e.to_string())?;
         let url = format!("http://127.0.0.1:{}", port);
-        if wait_for_backend(&url, 30).await.is_ok() {
+        if wait_for_backend(&url, 180).await.is_ok() {
             *state.backend.lock().await = Some(child);
             return Ok(port);
         }
@@ -382,8 +419,10 @@ pub fn run() {
             let child = tauri::async_runtime::block_on(start_backend(app.app_handle(), &data_dir, port))
                 .expect("could not start backend sidecar");
 
-            // Wait until the backend is ready before showing the window.
-            tauri::async_runtime::block_on(wait_for_backend(&format!("http://127.0.0.1:{}", port), 60))
+            // Wait until the backend is ready before showing the window. On
+            // cold start the onefile sidecar extracts itself to %TEMP% first,
+            // which plus Django's import can take ~90s on slower machines.
+            tauri::async_runtime::block_on(wait_for_backend(&format!("http://127.0.0.1:{}", port), 180))
                 .expect("backend failed to start");
 
             let state = DesktopState {

@@ -95,6 +95,8 @@ desktop-data/
 
 # Local installer package (built on demand)
 /ML-Auditor_*.deb
+/ML-Auditor_*-setup.exe
+/ML-Auditor_*-setup.exe.sig
 
 # Notification sound asset (downloaded/generated during build)
 frontend/public/notification.mp3
